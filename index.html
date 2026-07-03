@@ -1,0 +1,393 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Besu EVM Benchmark Dashboard</title>
+  <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.0/dist/chart.umd.min.js"></script>
+  <style>
+    *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+
+    :root {
+      --bg:        #0d1117;
+      --surface:   #161b22;
+      --border:    #30363d;
+      --text:      #e6edf3;
+      --muted:     #8b949e;
+      --accent:    #388bfd;
+      --green:     #3fb950;
+      --red:       #f85149;
+      --yellow:    #d29922;
+      --purple:    #bc8cff;
+    }
+
+    body {
+      background: var(--bg);
+      color: var(--text);
+      font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Helvetica, Arial, sans-serif;
+      font-size: 14px;
+      line-height: 1.5;
+      min-height: 100vh;
+    }
+
+    /* ── Header ── */
+    header {
+      background: var(--surface);
+      border-bottom: 1px solid var(--border);
+      padding: 16px 24px;
+      display: flex;
+      align-items: center;
+      gap: 12px;
+    }
+    header h1 {
+      font-size: 18px;
+      font-weight: 600;
+      color: var(--text);
+    }
+    header .subtitle {
+      font-size: 13px;
+      color: var(--muted);
+      margin-left: auto;
+    }
+    .badge {
+      display: inline-block;
+      padding: 2px 8px;
+      border-radius: 12px;
+      font-size: 11px;
+      font-weight: 600;
+      background: #1f6feb33;
+      color: var(--accent);
+      border: 1px solid #388bfd55;
+    }
+
+    /* ── Meta bar ── */
+    #meta-bar {
+      background: var(--surface);
+      border-bottom: 1px solid var(--border);
+      padding: 10px 24px;
+      display: flex;
+      gap: 24px;
+      flex-wrap: wrap;
+      align-items: center;
+      font-size: 12px;
+      color: var(--muted);
+    }
+    #meta-bar span strong { color: var(--text); }
+    #meta-bar.hidden { display: none; }
+
+    /* ── Tabs ── */
+    nav {
+      background: var(--surface);
+      border-bottom: 1px solid var(--border);
+      padding: 0 24px;
+      display: flex;
+      gap: 0;
+    }
+    .tab-btn {
+      background: none;
+      border: none;
+      border-bottom: 2px solid transparent;
+      color: var(--muted);
+      cursor: pointer;
+      font-size: 14px;
+      padding: 12px 16px;
+      margin-bottom: -1px;
+      transition: color 0.15s, border-color 0.15s;
+    }
+    .tab-btn:hover { color: var(--text); }
+    .tab-btn.active {
+      color: var(--text);
+      border-bottom-color: var(--accent);
+    }
+
+    /* ── Main layout ── */
+    main { padding: 24px; max-width: 1400px; }
+
+    .tab-content { display: none; }
+
+    /* ── Summary cards ── */
+    .cards {
+      display: grid;
+      grid-template-columns: repeat(auto-fit, minmax(160px, 1fr));
+      gap: 12px;
+      margin-bottom: 20px;
+    }
+    .card {
+      background: var(--surface);
+      border: 1px solid var(--border);
+      border-radius: 6px;
+      padding: 16px;
+    }
+    .card-label { font-size: 11px; color: var(--muted); text-transform: uppercase; letter-spacing: 0.5px; }
+    .card-value { font-size: 24px; font-weight: 600; margin-top: 4px; color: var(--text); }
+    .card-sub   { font-size: 11px; color: var(--muted); margin-top: 2px; }
+
+    /* ── Search + filter bar ── */
+    .toolbar {
+      display: flex;
+      gap: 10px;
+      margin-bottom: 14px;
+      align-items: center;
+      flex-wrap: wrap;
+    }
+    .toolbar input[type="text"] {
+      background: var(--surface);
+      border: 1px solid var(--border);
+      border-radius: 6px;
+      color: var(--text);
+      font-size: 13px;
+      padding: 6px 12px;
+      width: 280px;
+      outline: none;
+    }
+    .toolbar input[type="text"]:focus { border-color: var(--accent); }
+    .toolbar label { font-size: 13px; color: var(--muted); }
+    .toolbar select {
+      background: var(--surface);
+      border: 1px solid var(--border);
+      border-radius: 6px;
+      color: var(--text);
+      font-size: 13px;
+      padding: 6px 10px;
+      outline: none;
+    }
+    #result-count { font-size: 12px; color: var(--muted); margin-left: auto; }
+
+    /* ── Table ── */
+    .table-wrap {
+      border: 1px solid var(--border);
+      border-radius: 6px;
+      overflow: auto;
+    }
+    table {
+      width: 100%;
+      border-collapse: collapse;
+      font-size: 13px;
+    }
+    thead th {
+      background: var(--surface);
+      border-bottom: 1px solid var(--border);
+      color: var(--muted);
+      cursor: pointer;
+      font-size: 11px;
+      font-weight: 600;
+      padding: 10px 14px;
+      text-align: left;
+      text-transform: uppercase;
+      letter-spacing: 0.5px;
+      user-select: none;
+      white-space: nowrap;
+    }
+    thead th:hover { color: var(--text); }
+    thead th.sorted { color: var(--accent); }
+    thead th .sort-arrow { margin-left: 4px; opacity: 0.6; }
+
+    tbody tr {
+      border-bottom: 1px solid var(--border);
+      cursor: pointer;
+      transition: background 0.1s;
+    }
+    tbody tr:last-child { border-bottom: none; }
+    tbody tr:hover { background: #161b2288; }
+    tbody tr.selected { background: #1f6feb22; }
+
+    td { padding: 9px 14px; vertical-align: middle; }
+    td.num { font-family: "SF Mono", "Fira Code", monospace; text-align: right; }
+    td .muted { color: var(--muted); font-size: 12px; }
+
+    .delta-pos { color: var(--red); }
+    .delta-neg { color: var(--green); }
+    .delta-noise { color: var(--muted); }
+
+    /* ── Chart panel ── */
+    #trend-panel {
+      background: var(--surface);
+      border: 1px solid var(--border);
+      border-radius: 6px;
+      padding: 20px;
+      margin-top: 16px;
+    }
+    #trend-panel h3 {
+      font-size: 14px;
+      margin-bottom: 4px;
+    }
+    #trend-panel .trend-sub {
+      font-size: 12px;
+      color: var(--muted);
+      margin-bottom: 16px;
+    }
+    #trend-panel.hidden { display: none; }
+    #trend-chart-wrap { position: relative; height: 300px; }
+
+    /* ── Compare view ── */
+    .compare-controls {
+      display: flex;
+      gap: 16px;
+      align-items: center;
+      flex-wrap: wrap;
+      margin-bottom: 20px;
+      background: var(--surface);
+      border: 1px solid var(--border);
+      border-radius: 6px;
+      padding: 16px;
+    }
+    .compare-controls label { font-size: 13px; color: var(--muted); }
+    .compare-controls select {
+      background: var(--bg);
+      border: 1px solid var(--border);
+      border-radius: 6px;
+      color: var(--text);
+      font-size: 13px;
+      padding: 6px 10px;
+      min-width: 260px;
+      outline: none;
+    }
+    .compare-controls select:focus { border-color: var(--accent); }
+    .btn {
+      background: var(--accent);
+      border: none;
+      border-radius: 6px;
+      color: #fff;
+      cursor: pointer;
+      font-size: 13px;
+      font-weight: 600;
+      padding: 7px 16px;
+      transition: opacity 0.15s;
+    }
+    .btn:hover { opacity: 0.85; }
+    .btn:disabled { opacity: 0.4; cursor: not-allowed; }
+
+    /* speedup column */
+    .faster { color: var(--green); font-weight: 600; }
+    .slower { color: var(--red);   font-weight: 600; }
+    .same   { color: var(--muted); }
+
+    /* ── Error / loading states ── */
+    .msg {
+      padding: 40px;
+      text-align: center;
+      color: var(--muted);
+      font-size: 15px;
+    }
+    .msg.error { color: var(--red); }
+
+    /* ── Trend tab placeholder ── */
+    .trend-hint {
+      padding: 40px;
+      text-align: center;
+      color: var(--muted);
+      font-size: 14px;
+      background: var(--surface);
+      border: 1px solid var(--border);
+      border-radius: 6px;
+    }
+
+    @media (max-width: 700px) {
+      main { padding: 12px; }
+      header { padding: 12px; flex-wrap: wrap; }
+      .compare-controls { flex-direction: column; align-items: flex-start; }
+    }
+  </style>
+</head>
+<body>
+
+<header>
+  <div>
+    <h1>Besu EVM Benchmark Dashboard</h1>
+  </div>
+  <span class="badge">JMH · avgt · ns/op</span>
+  <span class="subtitle">Hyperledger Besu &mdash; Continuous EVM Benchmarking</span>
+</header>
+
+<div id="meta-bar" class="hidden">
+  <span>Latest run: <strong id="meta-ref">—</strong></span>
+  <span>SHA: <strong id="meta-sha">—</strong></span>
+  <span>Date: <strong id="meta-date">—</strong></span>
+  <span>Runner: <strong id="meta-runner">—</strong></span>
+  <span>Benchmarks: <strong id="meta-count">—</strong></span>
+</div>
+
+<nav>
+  <button class="tab-btn active" data-tab="latest" onclick="showTab('latest')">Latest Run</button>
+  <button class="tab-btn" data-tab="trend"  onclick="showTab('trend')">Trend Chart</button>
+  <button class="tab-btn" data-tab="compare" onclick="showTab('compare')">Compare Runs</button>
+</nav>
+
+<main>
+
+  <!-- ── Tab: Latest Run ── -->
+  <div id="tab-latest" class="tab-content">
+    <div class="cards" id="summary-cards"></div>
+
+    <div class="toolbar">
+      <input type="text" id="search-input" placeholder="Filter benchmarks..." oninput="applyFilter()" />
+      <label>
+        Show:
+        <select id="status-filter" onchange="applyFilter()">
+          <option value="all">All</option>
+          <option value="regression">Regressions only</option>
+          <option value="improvement">Improvements only</option>
+          <option value="noisy">Noisy only</option>
+        </select>
+      </label>
+      <span id="result-count"></span>
+    </div>
+
+    <div class="table-wrap">
+      <table id="bench-table">
+        <thead>
+          <tr>
+            <th onclick="sortBy('name')">Benchmark <span class="sort-arrow" id="arr-name"></span></th>
+            <th onclick="sortBy('params')">Params <span class="sort-arrow" id="arr-params"></span></th>
+            <th onclick="sortBy('score')" class="sorted">Score (ns/op) <span class="sort-arrow" id="arr-score">↑</span></th>
+            <th onclick="sortBy('error')">± Error <span class="sort-arrow" id="arr-error"></span></th>
+            <th onclick="sortBy('delta')">vs Previous <span class="sort-arrow" id="arr-delta"></span></th>
+            <th onclick="sortBy('status')">Status <span class="sort-arrow" id="arr-status"></span></th>
+          </tr>
+        </thead>
+        <tbody id="bench-tbody"></tbody>
+      </table>
+    </div>
+
+    <div id="trend-panel" class="hidden" style="margin-top:20px;">
+      <h3 id="trend-title"></h3>
+      <div class="trend-sub" id="trend-sub"></div>
+      <div id="trend-chart-wrap"><canvas id="trend-chart"></canvas></div>
+    </div>
+  </div>
+
+  <!-- ── Tab: Trend Chart ── -->
+  <div id="tab-trend" class="tab-content">
+    <div class="trend-hint" id="trend-tab-hint">
+      Click any benchmark row in the <strong>Latest Run</strong> tab to open its trend chart here,
+      or select a benchmark below.
+    </div>
+    <div style="margin-top:16px;" id="trend-tab-select-wrap"></div>
+    <div id="trend-tab-chart-wrap" style="display:none; background:var(--surface); border:1px solid var(--border); border-radius:6px; padding:20px; margin-top:16px;">
+      <h3 id="trend-tab-title"></h3>
+      <div class="trend-sub" id="trend-tab-sub"></div>
+      <div style="position:relative; height:350px;"><canvas id="trend-tab-chart"></canvas></div>
+    </div>
+  </div>
+
+  <!-- ── Tab: Compare Runs ── -->
+  <div id="tab-compare" class="tab-content">
+    <div class="compare-controls">
+      <div>
+        <label>Run A (baseline)</label><br/>
+        <select id="compare-a"></select>
+      </div>
+      <div>
+        <label>Run B (current)</label><br/>
+        <select id="compare-b"></select>
+      </div>
+      <button class="btn" onclick="runComparison()" id="compare-btn">Compare</button>
+    </div>
+    <div id="compare-result"></div>
+  </div>
+
+</main>
+
+<script src="dashboard.js"></script>
+</body>
+</html>

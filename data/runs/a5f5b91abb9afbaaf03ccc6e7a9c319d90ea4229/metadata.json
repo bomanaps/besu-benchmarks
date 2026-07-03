@@ -1,0 +1,13 @@
+{
+  "sha": "a5f5b91abb9afbaaf03ccc6e7a9c319d90ea4229",
+  "ref": "feat/continuous-evm-benchmarking",
+  "date": "2026-06-23T13:58:10Z",
+  "run_id": "28018044486",
+  "benchmark_filter": "all",
+  "runner_os": "Linux",
+  "runner_arch": "X64",
+  "java_version": "openjdk version 21.0.11 2026-04-21 LTS",
+  "cpu_model": "AMD EPYC 7763 64-Core Processor",
+  "cpu_cores": "4",
+  "ram_total": "15Gi"
+}

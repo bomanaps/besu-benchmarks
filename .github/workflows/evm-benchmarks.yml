@@ -1,0 +1,140 @@
+name: EVM JMH Benchmarks
+
+on:
+  workflow_dispatch:
+    inputs:
+      besu_ref:
+        description: 'Besu ref (branch, tag, or SHA) to benchmark'
+        required: true
+        default: 'main'
+      besu_repo:
+        description: 'Besu repository to clone'
+        required: false
+        default: 'besu-eth/besu'
+      benchmark_filter:
+        description: 'JMH include pattern — leave empty to run all benchmarks'
+        required: false
+        default: ''
+
+jobs:
+  jmh-benchmarks:
+    runs-on: ubuntu-latest
+    timeout-minutes: 240
+    permissions:
+      contents: write
+
+    steps:
+      - name: Checkout besu-benchmarks
+        uses: actions/checkout@v4
+
+      - name: Setup Java 25
+        uses: actions/setup-java@v4
+        with:
+          java-version: '25'
+          distribution: 'temurin'
+
+      - name: Setup Gradle
+        uses: gradle/actions/setup-gradle@v3
+
+      - name: Clone Besu
+        run: |
+          git clone --depth 100 https://github.com/${{ inputs.besu_repo }}.git besu
+          cd besu
+          git checkout ${{ inputs.besu_ref }}
+          echo "BESU_SHA=$(git rev-parse HEAD)" >> $GITHUB_ENV
+
+      - name: Ensure JMH writes JSON output
+        working-directory: besu
+        run: |
+          if ! grep -q "resultFormat" build.gradle; then
+            if ! grep -q "^jmh {" build.gradle; then
+              echo "ERROR: jmh block not found in build.gradle, cannot inject resultFormat" >&2
+              exit 1
+            fi
+            sed -i "/^jmh {/a\\  resultFormat = 'JSON'" build.gradle
+            echo "Patched build.gradle to set resultFormat = 'JSON'"
+          else
+            echo "build.gradle already declares resultFormat — no patch needed"
+          fi
+
+      - name: Run JMH Benchmarks
+        working-directory: besu
+        run: |
+          FILTER="${{ inputs.benchmark_filter }}"
+          if [ -n "$FILTER" ]; then
+            ./gradlew :ethereum:core:jmh -Pincludes="$FILTER" --rerun-tasks
+          else
+            ./gradlew :ethereum:core:jmh --rerun-tasks
+          fi
+
+      - name: Stage results and metadata
+        run: |
+          mkdir -p benchmark-output
+          cp besu/ethereum/core/build/results/jmh/results.json benchmark-output/jmh-results.json
+          cat > benchmark-output/metadata.json << EOF
+          {
+            "sha": "${BESU_SHA}",
+            "ref": "${{ inputs.besu_ref }}",
+            "besu_repo": "${{ inputs.besu_repo }}",
+            "date": "$(date -u +%Y-%m-%dT%H:%M:%SZ)",
+            "run_id": "${{ github.run_id }}",
+            "benchmark_filter": "${{ inputs.benchmark_filter || 'all' }}",
+            "runner_os": "${{ runner.os }}",
+            "runner_arch": "${{ runner.arch }}",
+            "java_version": "$(java -version 2>&1 | head -1 | tr -d '\"')",
+            "cpu_model": "$(grep -m1 'model name' /proc/cpuinfo | cut -d: -f2 | xargs)",
+            "cpu_cores": "$(nproc)",
+            "ram_total": "$(free -h | awk '/^Mem:/{print $2}')"
+          }
+          EOF
+
+      - name: Upload benchmark artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: jmh-results-${{ env.BESU_SHA }}
+          path: benchmark-output/
+          retention-days: 90
+
+      - name: Persist results to main
+        env:
+          SHA: ${{ env.BESU_SHA }}
+          BENCHMARK_RESULTS: ${{ github.workspace }}
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+          git pull --rebase origin main
+          mkdir -p data/runs/${SHA}
+          cp benchmark-output/jmh-results.json data/runs/${SHA}/results.json
+          cp benchmark-output/metadata.json    data/runs/${SHA}/metadata.json
+          python3 scripts/update_benchmark_index.py
+          git add data/runs/
+          git commit -m "data: add benchmark run ${SHA}"
+          git push origin main
+
+      - name: Write job summary
+        run: |
+          BENCHMARK_COUNT=$(python3 -c "
+          import json
+          data = json.load(open('benchmark-output/jmh-results.json'))
+          print(len(data))
+          ")
+
+          cat >> $GITHUB_STEP_SUMMARY << EOF
+          ## EVM JMH Benchmark Results
+
+          | | |
+          |---|---|
+          | **Besu ref** | \`${{ inputs.besu_ref }}\` |
+          | **Besu SHA** | \`${BESU_SHA}\` |
+          | **Besu repo** | \`${{ inputs.besu_repo }}\` |
+          | **Runner** | ${{ runner.os }} / ${{ runner.arch }} |
+          | **Filter** | \`${{ inputs.benchmark_filter || 'all' }}\` |
+          | **Benchmarks recorded** | ${BENCHMARK_COUNT} |
+          | **Artifact** | \`jmh-results-${BESU_SHA}\` — retained 90 days |
+          | **Dashboard** | https://bomanaps.github.io/besu-benchmarks/ |
+
+          ### How to view results
+          1. Wait ~30s for GitHub Pages to redeploy
+          2. Open the dashboard link above
+          3. Or download the artifact and load \`jmh-results.json\` into [JMH Visualizer](http://jmh.morethan.io)
+          EOF

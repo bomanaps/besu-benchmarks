@@ -1,0 +1,13 @@
+{
+  "sha": "6bd6a4d1cbee23caa557de72dcb8be156fcfe745",
+  "ref": "main",
+  "date": "2026-04-04T18:20:19Z",
+  "run_id": "23981867801",
+  "benchmark_filter": "all",
+  "runner_os": "Linux",
+  "runner_arch": "X64",
+  "java_version": "openjdk version 21.0.10 2026-01-20 LTS",
+  "cpu_model": "AMD EPYC 7763 64-Core Processor",
+  "cpu_cores": "4",
+  "ram_total": "15Gi"
+}
