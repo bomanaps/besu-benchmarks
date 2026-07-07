@@ -47,12 +47,13 @@ jobs:
         working-directory: besu
         run: |
           if ! grep -q "resultFormat" build.gradle; then
-            if ! grep -q "^jmh {" build.gradle; then
+            if ! grep -qE "^[[:space:]]*jmh \{" build.gradle; then
               echo "ERROR: jmh block not found in build.gradle, cannot inject resultFormat" >&2
               exit 1
             fi
-            sed -i "/^jmh {/a\\  resultFormat = 'JSON'" build.gradle
+            sed -i -E "/^[[:space:]]*jmh \{/a\\      resultFormat = 'JSON'" build.gradle
             echo "Patched build.gradle to set resultFormat = 'JSON'"
+            grep -n "resultFormat" build.gradle
           else
             echo "build.gradle already declares resultFormat — no patch needed"
           fi
