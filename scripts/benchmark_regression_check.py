@@ -43,9 +43,9 @@ def parse_args():
     parser.add_argument(
         "--threshold",
         type=float,
-        default=10.0,
+        default=5.0,
         metavar="PCT",
-        help="Regression threshold as a percentage (default: 10). A benchmark is "
+        help="Regression threshold as a percentage (default: 5). A benchmark is "
              "flagged only if the score increased by more than this amount AND the "
              "confidence intervals do not overlap.",
     )

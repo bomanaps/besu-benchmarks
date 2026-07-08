@@ -7,6 +7,65 @@
 const DATA_BASE = 'data/runs';
 const INDEX_URL = `${DATA_BASE}/index.json`;
 
+const REGRESSION_THRESHOLD_PCT = 5;
+
+// Keyed by Besu Operation class name (JMH benchmark class minus the "Benchmark"
+// suffix). To extend: add any new subclass of AbstractFixedCostOperation in
+// besu/evm/src/main/java/org/hyperledger/besu/evm/operation/. Dynamic-cost
+// opcodes are intentionally absent and render "—" in the MGas/s column.
+const OPCODE_GAS_COST = {
+  // 0 gas
+  'StopOperation': 0,
+  // 1 gas
+  'JumpDestOperation': 1,
+  // 2 gas (BASE tier)
+  'AddressOperation': 2,        'BaseFeeOperation': 2,        'BlobBaseFeeOperation': 2,
+  'CallDataSizeOperation': 2,   'CallValueOperation': 2,      'CallerOperation': 2,
+  'ChainIdOperation': 2,        'CodeSizeOperation': 2,       'CoinbaseOperation': 2,
+  'DifficultyOperation': 2,     'GasLimitOperation': 2,       'GasOperation': 2,
+  'GasPriceOperation': 2,       'MSizeOperation': 2,          'NumberOperation': 2,
+  'OriginOperation': 2,         'PCOperation': 2,             'PopOperation': 2,
+  'PrevRanDaoOperation': 2,     'Push0Operation': 2,          'ReturnDataSizeOperation': 2,
+  'SlotNumOperation': 2,        'TimestampOperation': 2,
+  // 3 gas (VERY_LOW tier)
+  'AddOperation': 3,            'AddOperationOptimized': 3,   'AndOperation': 3,
+  'AndOperationOptimized': 3,   'ByteOperation': 3,           'CallDataLoadOperation': 3,
+  'DupOperation': 3,            'DupNOperation': 3,           'EqOperation': 3,
+  'ExchangeOperation': 3,       'GtOperation': 3,             'IsZeroOperation': 3,
+  'LtOperation': 3,             'NotOperation': 3,            'NotOperationOptimized': 3,
+  'OrOperation': 3,             'OrOperationOptimized': 3,    'PushOperation': 3,
+  'SarOperation': 3,            'SarOperationOptimized': 3,   'SGtOperation': 3,
+  'ShlOperation': 3,            'ShlOperationOptimized': 3,   'ShrOperation': 3,
+  'ShrOperationOptimized': 3,   'SLtOperation': 3,            'SubOperation': 3,
+  'SubOperationOptimized': 3,   'SwapOperation': 3,           'SwapNOperation': 3,
+  'XorOperation': 3,            'XorOperationOptimized': 3,
+  // 5 gas (LOW tier)
+  'CountLeadingZerosOperation': 5, 'DivOperation': 5,        'DivOperationOptimized': 5,
+  'ModOperation': 5,            'ModOperationOptimized': 5,   'MulOperation': 5,
+  'MulOperationOptimized': 5,   'SDivOperation': 5,           'SDivOperationOptimized': 5,
+  'SelfBalanceOperation': 5,    'SignExtendOperation': 5,     'SModOperation': 5,
+  'SModOperationOptimized': 5,
+  // 8 gas (MID tier)
+  'AddModOperation': 8,         'AddModOperationOptimized': 8,
+  'JumpOperation': 8,           'MulModOperation': 8,         'MulModOperationOptimized': 8,
+  // 10 gas (HIGH tier)
+  'JumpiOperation': 10,
+};
+
+// (1e9 ns/s ÷ ns/op) × gas/op ÷ 1e6 = MGas/s.
+// The < 0.5 ns/op floor rejects baseline-subtracted or optimized-out benchmarks
+// whose reported score collapses toward zero; without it those produce
+// nonsense throughput in the billions.
+function computeMGasPerSec(scoreNsPerOp, benchmarkShortName) {
+  const opcodeClass = benchmarkShortName.endsWith('Benchmark')
+    ? benchmarkShortName.slice(0, -'Benchmark'.length)
+    : benchmarkShortName;
+  const gas = OPCODE_GAS_COST[opcodeClass];
+  if (gas === undefined || !isFinite(scoreNsPerOp) || scoreNsPerOp < 0.5) return null;
+  const opsPerSec = 1e9 / scoreNsPerOp;
+  return (opsPerSec * gas) / 1e6;
+}
+
 // ── State ──────────────────────────────────────────────────────────────────
 
 let globalIndex    = [];   // all run metadata, sorted oldest-first
@@ -74,7 +133,7 @@ async function init() {
   try {
     globalIndex = await fetchJSON(INDEX_URL);
   } catch (e) {
-    showMsg('bench-tbody', `<tr><td colspan="6" class="msg error">Could not load index.json: ${e.message}</td></tr>`);
+    showMsg('bench-tbody', `<tr><td colspan="7" class="msg error">Could not load index.json: ${e.message}</td></tr>`);
     return;
   }
 
@@ -82,7 +141,7 @@ async function init() {
   globalIndex.sort((a, b) => new Date(a.date) - new Date(b.date));
 
   if (globalIndex.length === 0) {
-    showMsg('bench-tbody', '<tr><td colspan="6" class="msg">No benchmark runs found.</td></tr>');
+    showMsg('bench-tbody', '<tr><td colspan="7" class="msg">No benchmark runs found.</td></tr>');
     return;
   }
 
@@ -120,11 +179,11 @@ async function renderLatestRun() {
   el('meta-count').textContent   = latest.benchmark_count || '—';
 
   // Load results
-  el('bench-tbody').innerHTML = '<tr><td colspan="6" class="msg">Loading…</td></tr>';
+  el('bench-tbody').innerHTML = '<tr><td colspan="7" class="msg">Loading…</td></tr>';
   try {
     latestResults = await fetchJSON(`${DATA_BASE}/${latest.sha}/results.json`);
   } catch (e) {
-    el('bench-tbody').innerHTML = `<tr><td colspan="6" class="msg error">Failed to load results: ${e.message}</td></tr>`;
+    el('bench-tbody').innerHTML = `<tr><td colspan="7" class="msg error">Failed to load results: ${e.message}</td></tr>`;
     return;
   }
 
@@ -148,6 +207,7 @@ async function renderLatestRun() {
     entry._params = paramsDisplay(entry);
     entry._score  = entry.primaryMetric.score;
     entry._error  = entry.primaryMetric.scoreError;
+    entry._mgas   = computeMGasPerSec(entry._score, entry._name);
 
     const prev = prevMap[entry._key];
     if (prev && prev.primaryMetric.score !== 0) {
@@ -178,8 +238,8 @@ function renderSummaryCards(latest, prev) {
   const scores = latestResults.map(e => e._score);
   const max    = Math.max(...scores);
   const min    = Math.min(...scores);
-  const regressions = latestResults.filter(e => e._hasPrev && !e._noisy && e._delta > 10).length;
-  const improvements = latestResults.filter(e => e._hasPrev && !e._noisy && e._delta < -10).length;
+  const regressions = latestResults.filter(e => e._hasPrev && !e._noisy && e._delta > REGRESSION_THRESHOLD_PCT).length;
+  const improvements = latestResults.filter(e => e._hasPrev && !e._noisy && e._delta < -REGRESSION_THRESHOLD_PCT).length;
 
   const maxEntry = latestResults.find(e => e._score === max);
   const minEntry = latestResults.find(e => e._score === min);
@@ -193,12 +253,12 @@ function renderSummaryCards(latest, prev) {
     <div class="card">
       <div class="card-label">Regressions</div>
       <div class="card-value" style="color:${regressions > 0 ? 'var(--red)' : 'var(--green)'}">${prev ? regressions : '—'}</div>
-      <div class="card-sub">${prev ? '> 10% vs previous' : 'no previous run'}</div>
+      <div class="card-sub">${prev ? `> ${REGRESSION_THRESHOLD_PCT}% vs previous` : 'no previous run'}</div>
     </div>
     <div class="card">
       <div class="card-label">Improvements</div>
       <div class="card-value" style="color:var(--green)">${prev ? improvements : '—'}</div>
-      <div class="card-sub">${prev ? '> 10% faster' : 'no previous run'}</div>
+      <div class="card-sub">${prev ? `> ${REGRESSION_THRESHOLD_PCT}% faster` : 'no previous run'}</div>
     </div>
     <div class="card">
       <div class="card-label">Fastest</div>
@@ -251,9 +311,9 @@ function getFilteredSorted() {
 
   // Status filter
   if (statusFilter === 'regression') {
-    rows = rows.filter(e => e._hasPrev && !e._noisy && e._delta > 10);
+    rows = rows.filter(e => e._hasPrev && !e._noisy && e._delta > REGRESSION_THRESHOLD_PCT);
   } else if (statusFilter === 'improvement') {
-    rows = rows.filter(e => e._hasPrev && !e._noisy && e._delta < -10);
+    rows = rows.filter(e => e._hasPrev && !e._noisy && e._delta < -REGRESSION_THRESHOLD_PCT);
   } else if (statusFilter === 'noisy') {
     rows = rows.filter(e => e._hasPrev && e._noisy);
   }
@@ -265,6 +325,10 @@ function getFilteredSorted() {
       case 'name':   va = a._name;   vb = b._name;   break;
       case 'params': va = a._params; vb = b._params; break;
       case 'error':  va = a._error;  vb = b._error;  break;
+      case 'mgas':
+        va = a._mgas ?? (sortAsc ? Infinity : -Infinity);
+        vb = b._mgas ?? (sortAsc ? Infinity : -Infinity);
+        break;
       case 'delta':
         va = a._delta ?? (sortAsc ? Infinity : -Infinity);
         vb = b._delta ?? (sortAsc ? Infinity : -Infinity);
@@ -281,18 +345,18 @@ function getFilteredSorted() {
 }
 
 function statusOrder(e) {
-  if (e._hasPrev && !e._noisy && e._delta > 10)  return 0; // regression first
-  if (e._hasPrev && !e._noisy && e._delta < -10) return 1; // improvement
-  if (e._hasPrev && e._noisy)                    return 2; // noisy
-  if (!e._hasPrev)                               return 3; // new/no baseline
+  if (e._hasPrev && !e._noisy && e._delta > REGRESSION_THRESHOLD_PCT)  return 0; // regression first
+  if (e._hasPrev && !e._noisy && e._delta < -REGRESSION_THRESHOLD_PCT) return 1; // improvement
+  if (e._hasPrev && e._noisy)                                          return 2; // noisy
+  if (!e._hasPrev)                                                     return 3; // new/no baseline
   return 4; // ok
 }
 
 function statusLabel(e) {
-  if (!e._hasPrev)                               return '<span style="color:var(--muted)">—</span>';
-  if (e._noisy)                                  return '<span style="color:var(--muted)" title="Confidence intervals overlap — measurement noise">⚠ noisy</span>';
-  if (e._delta > 10)                             return '<span style="color:var(--red)">✗ regression</span>';
-  if (e._delta < -10)                            return '<span style="color:var(--green)">↑ faster</span>';
+  if (!e._hasPrev)                                    return '<span style="color:var(--muted)">—</span>';
+  if (e._noisy)                                       return '<span style="color:var(--muted)" title="Confidence intervals overlap — measurement noise">⚠ noisy</span>';
+  if (e._delta > REGRESSION_THRESHOLD_PCT)            return '<span style="color:var(--red)">✗ regression</span>';
+  if (e._delta < -REGRESSION_THRESHOLD_PCT)           return '<span style="color:var(--green)">↑ faster</span>';
   return '<span style="color:var(--muted)">✓ ok</span>';
 }
 
@@ -305,7 +369,7 @@ function deltaCell(e) {
 }
 
 function updateSortArrows() {
-  ['name','params','score','error','delta','status'].forEach(col => {
+  ['name','params','score','mgas','error','delta','status'].forEach(col => {
     const arr = el(`arr-${col}`);
     if (!arr) return;
     arr.textContent = sortCol === col ? (sortAsc ? '↑' : '↓') : '';
@@ -321,7 +385,7 @@ function renderTable() {
 
   const tbody = el('bench-tbody');
   if (rows.length === 0) {
-    tbody.innerHTML = '<tr><td colspan="6" class="msg">No benchmarks match the filter.</td></tr>';
+    tbody.innerHTML = '<tr><td colspan="7" class="msg">No benchmarks match the filter.</td></tr>';
     return;
   }
 
@@ -330,6 +394,7 @@ function renderTable() {
       <td>${escapeHTML(e._name)}</td>
       <td class="muted">${escapeHTML(e._params)}</td>
       <td class="num">${e._score.toFixed(2)}</td>
+      <td class="num ${e._mgas === null ? 'muted' : ''}">${e._mgas === null ? '—' : e._mgas.toFixed(1)}</td>
       <td class="num muted">± ${e._error.toFixed(2)}</td>
       ${deltaCell(e)}
       <td>${statusLabel(e)}</td>
