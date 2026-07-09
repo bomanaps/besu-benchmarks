@@ -5,6 +5,7 @@
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
   <title>Besu EVM Benchmark Dashboard</title>
   <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.0/dist/chart.umd.min.js"></script>
+  <script src="https://cdn.jsdelivr.net/npm/@sgratzl/chartjs-chart-boxplot@4/build/index.umd.min.js"></script>
   <style>
     *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
 
@@ -199,6 +200,30 @@
     .delta-neg { color: var(--green); }
     .delta-noise { color: var(--muted); }
 
+    /* ── Chart mode toggle (Line vs Box plot) ── */
+    .mode-toggle {
+      display: inline-flex;
+      border: 1px solid var(--border);
+      border-radius: 6px;
+      overflow: hidden;
+      background: var(--bg);
+    }
+    .mode-btn {
+      background: transparent;
+      border: none;
+      color: var(--muted);
+      cursor: pointer;
+      font-size: 12px;
+      font-weight: 600;
+      padding: 5px 12px;
+      transition: background 0.1s, color 0.1s;
+    }
+    .mode-btn:hover { color: var(--text); }
+    .mode-btn.active {
+      background: var(--accent);
+      color: #fff;
+    }
+
     /* ── Chart panel ── */
     #trend-panel {
       background: var(--surface);
@@ -351,8 +376,16 @@
     </div>
 
     <div id="trend-panel" class="hidden" style="margin-top:20px;">
-      <h3 id="trend-title"></h3>
-      <div class="trend-sub" id="trend-sub"></div>
+      <div style="display:flex; align-items:flex-start; justify-content:space-between; gap:12px; flex-wrap:wrap;">
+        <div>
+          <h3 id="trend-title"></h3>
+          <div class="trend-sub" id="trend-sub"></div>
+        </div>
+        <div class="mode-toggle" role="tablist" aria-label="Chart mode">
+          <button id="trend-mode-line" class="mode-btn active" onclick="setTrendMode('line')">Line</button>
+          <button id="trend-mode-box"  class="mode-btn"        onclick="setTrendMode('box')">Box plot</button>
+        </div>
+      </div>
       <div id="trend-chart-wrap"><canvas id="trend-chart"></canvas></div>
     </div>
   </div>
@@ -365,8 +398,16 @@
     </div>
     <div style="margin-top:16px;" id="trend-tab-select-wrap"></div>
     <div id="trend-tab-chart-wrap" style="display:none; background:var(--surface); border:1px solid var(--border); border-radius:6px; padding:20px; margin-top:16px;">
-      <h3 id="trend-tab-title"></h3>
-      <div class="trend-sub" id="trend-tab-sub"></div>
+      <div style="display:flex; align-items:flex-start; justify-content:space-between; gap:12px; flex-wrap:wrap;">
+        <div>
+          <h3 id="trend-tab-title"></h3>
+          <div class="trend-sub" id="trend-tab-sub"></div>
+        </div>
+        <div class="mode-toggle" role="tablist" aria-label="Chart mode">
+          <button id="trend-tab-mode-line" class="mode-btn active" onclick="setTrendTabMode('line')">Line</button>
+          <button id="trend-tab-mode-box"  class="mode-btn"        onclick="setTrendTabMode('box')">Box plot</button>
+        </div>
+      </div>
       <div style="position:relative; height:350px;"><canvas id="trend-tab-chart"></canvas></div>
     </div>
   </div>
