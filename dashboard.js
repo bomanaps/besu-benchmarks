@@ -50,6 +50,20 @@ const OPCODE_GAS_COST = {
   'JumpOperation': 8,           'MulModOperation': 8,         'MulModOperationOptimized': 8,
   // 10 gas (HIGH tier)
   'JumpiOperation': 10,
+
+  // V2 — subclasses of AbstractFixedCostOperationV2
+  // 2 gas (BASE tier)
+  'BaseFeeOperationV2': 2,      'BlobBaseFeeOperationV2': 2,  'CallValueOperationV2': 2,
+  'ChainIdOperationV2': 2,      'CoinbaseOperationV2': 2,     'GasLimitOperationV2': 2,
+  'GasPriceOperationV2': 2,     'PrevRanDaoOperationV2': 2,
+  // 3 gas (VERY_LOW tier)
+  'AddOperationV2': 3,          'SarOperationV2': 3,          'ShlOperationV2': 3,
+  'ShrOperationV2': 3,          'SubOperationV2': 3,
+  // 5 gas (LOW tier)
+  'DivOperationV2': 5,          'ModOperationV2': 5,          'MulOperationV2': 5,
+  'SDivOperationV2': 5,         'SelfBalanceOperationV2': 5,  'SModOperationV2': 5,
+  // 8 gas (MID tier)
+  'MulModOperationV2': 8,
 };
 
 // (1e9 ns/s ÷ ns/op) × gas/op ÷ 1e6 = MGas/s.
@@ -57,9 +71,10 @@ const OPCODE_GAS_COST = {
 // whose reported score collapses toward zero; without it those produce
 // nonsense throughput in the billions.
 function computeMGasPerSec(scoreNsPerOp, benchmarkShortName) {
-  const opcodeClass = benchmarkShortName.endsWith('Benchmark')
-    ? benchmarkShortName.slice(0, -'Benchmark'.length)
-    : benchmarkShortName;
+  const opcodeClass =
+    benchmarkShortName.endsWith('BenchmarkV2') ? benchmarkShortName.slice(0, -'BenchmarkV2'.length) + 'V2' :
+    benchmarkShortName.endsWith('Benchmark')   ? benchmarkShortName.slice(0, -'Benchmark'.length) :
+    benchmarkShortName;
   const gas = OPCODE_GAS_COST[opcodeClass];
   if (gas === undefined || !isFinite(scoreNsPerOp) || scoreNsPerOp < 0.5) return null;
   const opsPerSec = 1e9 / scoreNsPerOp;
