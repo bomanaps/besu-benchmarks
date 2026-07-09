@@ -79,6 +79,10 @@ let activeTab      = 'latest';
 let trendChart     = null; // Chart.js instance in latest tab
 let trendTabChart  = null; // Chart.js instance in trend tab
 let selectedKey    = null; // currently selected benchmark key
+let trendMode        = 'line'; // 'line' | 'box'
+let trendTabMode     = 'line';
+let lastTrendData    = null;
+let lastTrendTabData = null;
 
 // ── Utilities ──────────────────────────────────────────────────────────────
 
@@ -426,17 +430,18 @@ async function renderInlineTrend(key) {
   const panel = el('trend-panel');
   panel.classList.remove('hidden');
 
-  // Find the entry in latest results to get display name
   const entry = latestResults.find(e => e._key === key);
   if (!entry) return;
 
   el('trend-title').textContent = `${entry._name} — ${entry._params}`;
-  el('trend-sub').textContent   = 'Historical ns/op across stored runs (lower is better)';
+  el('trend-sub').textContent   = trendSubText(trendMode);
 
-  const { labels, scores, errors } = await loadTrendData(key);
+  lastTrendData = await loadTrendData(key);
 
   destroyChart('trendChart');
-  trendChart = buildLineChart('trend-chart', labels, scores, errors);
+  trendChart = trendMode === 'box'
+    ? buildBoxPlotChart('trend-chart', lastTrendData.labels, lastTrendData.raw)
+    : buildLineChart('trend-chart', lastTrendData.labels, lastTrendData.scores, lastTrendData.errors);
 }
 
 async function renderTrendFromTab(key) {
@@ -446,22 +451,50 @@ async function renderTrendFromTab(key) {
                 { _name: key.split('|')[0].split('.').slice(-2, -1)[0], _params: '' };
 
   el('trend-tab-title').textContent = entry._name + (entry._params && entry._params !== '—' ? ` — ${entry._params}` : '');
-  el('trend-tab-sub').textContent   = 'Historical ns/op across stored runs (lower is better)';
+  el('trend-tab-sub').textContent   = trendSubText(trendTabMode);
   el('trend-tab-chart-wrap').style.display = 'block';
   el('trend-tab-hint').style.display = 'none';
 
-  const { labels, scores, errors } = await loadTrendData(key);
+  lastTrendTabData = await loadTrendData(key);
 
   destroyChart('trendTabChart');
-  trendTabChart = buildLineChart('trend-tab-chart', labels, scores, errors);
+  trendTabChart = trendTabMode === 'box'
+    ? buildBoxPlotChart('trend-tab-chart', lastTrendTabData.labels, lastTrendTabData.raw)
+    : buildLineChart('trend-tab-chart', lastTrendTabData.labels, lastTrendTabData.scores, lastTrendTabData.errors);
+}
+
+function setTrendMode(mode) {
+  if (mode === trendMode) return;
+  trendMode = mode;
+  el('trend-mode-line').classList.toggle('active', mode === 'line');
+  el('trend-mode-box').classList.toggle('active', mode === 'box');
+  if (!lastTrendData) return;
+  el('trend-sub').textContent = trendSubText(mode);
+  destroyChart('trendChart');
+  trendChart = mode === 'box'
+    ? buildBoxPlotChart('trend-chart', lastTrendData.labels, lastTrendData.raw)
+    : buildLineChart('trend-chart', lastTrendData.labels, lastTrendData.scores, lastTrendData.errors);
+}
+
+function setTrendTabMode(mode) {
+  if (mode === trendTabMode) return;
+  trendTabMode = mode;
+  el('trend-tab-mode-line').classList.toggle('active', mode === 'line');
+  el('trend-tab-mode-box').classList.toggle('active', mode === 'box');
+  if (!lastTrendTabData) return;
+  el('trend-tab-sub').textContent = trendSubText(mode);
+  destroyChart('trendTabChart');
+  trendTabChart = mode === 'box'
+    ? buildBoxPlotChart('trend-tab-chart', lastTrendTabData.labels, lastTrendTabData.raw)
+    : buildLineChart('trend-tab-chart', lastTrendTabData.labels, lastTrendTabData.scores, lastTrendTabData.errors);
 }
 
 async function loadTrendData(key) {
-  // Load up to 20 most recent runs
   const slice = globalIndex.slice(-20);
   const labels = [];
   const scores = [];
   const errors = [];
+  const raw    = [];
 
   for (const run of slice) {
     try {
@@ -471,11 +504,13 @@ async function loadTrendData(key) {
         labels.push(fmtDateShort(run.date) + ' (' + shortenSHA(run.sha) + ')');
         scores.push(match.primaryMetric.score);
         errors.push(match.primaryMetric.scoreError);
+        const rd = match.primaryMetric.rawData;
+        raw.push(Array.isArray(rd) ? rd.flat() : []);
       }
     } catch (_) { /* skip failed loads */ }
   }
 
-  return { labels, scores, errors };
+  return { labels, scores, errors, raw };
 }
 
 function buildLineChart(canvasId, labels, scores, errors) {
@@ -525,6 +560,83 @@ function buildLineChart(canvasId, labels, scores, errors) {
       }
     }
   });
+}
+
+// chartjs-chart-boxplot summarises each inner array (Tukey, 1.5×IQR whiskers).
+function buildBoxPlotChart(canvasId, labels, rawByRun) {
+  const ctx = el(canvasId).getContext('2d');
+
+  // Tight-scale Y so stable benchmarks don't render as hairlines.
+  const flat = rawByRun.flat().filter(v => Number.isFinite(v));
+  const dataMin = flat.length ? Math.min(...flat) : 0;
+  const dataMax = flat.length ? Math.max(...flat) : 1;
+  const pad     = Math.max((dataMax - dataMin) * 0.15, dataMax * 0.02);
+  const yMin    = Math.max(0, dataMin - pad);
+  const yMax    = dataMax + pad;
+
+  return new Chart(ctx, {
+    type: 'boxplot',
+    data: {
+      labels,
+      datasets: [{
+        label: 'ns/op distribution',
+        data: rawByRun,
+        backgroundColor: '#388bfd33',
+        borderColor: '#388bfd',
+        borderWidth: 1.5,
+        medianColor: '#f0f6fc',
+        itemRadius: 2,
+        itemStyle: 'circle',
+        itemBackgroundColor: '#8b949e88',
+        outlierRadius: 3,
+        outlierBackgroundColor: '#f8514933',
+        outlierBorderColor: '#f85149',
+      }]
+    },
+    options: {
+      responsive: true,
+      maintainAspectRatio: false,
+      interaction: { mode: 'index', intersect: false },
+      plugins: {
+        legend: { display: false },
+        tooltip: {
+          callbacks: {
+            label: (item) => {
+              const p = item.parsed;
+              if (!p) return '';
+              const f = (v) => (typeof v === 'number' ? v.toFixed(2) : '—');
+              const n = Array.isArray(p.items) ? p.items.length : '—';
+              return [
+                `median: ${f(p.median)} ns/op`,
+                `Q1–Q3:  ${f(p.q1)}–${f(p.q3)}`,
+                `min–max: ${f(p.min)}–${f(p.max)}`,
+                `n = ${n} (3 forks × 5 iterations)`,
+              ];
+            }
+          }
+        }
+      },
+      scales: {
+        x: {
+          ticks: { color: '#8b949e', maxRotation: 45, font: { size: 11 } },
+          grid:  { color: '#30363d' }
+        },
+        y: {
+          title: { display: true, text: 'ns/op (lower is better)', color: '#8b949e' },
+          ticks: { color: '#8b949e' },
+          grid:  { color: '#30363d' },
+          min:   yMin,
+          max:   yMax,
+        }
+      }
+    }
+  });
+}
+
+function trendSubText(mode) {
+  return mode === 'box'
+    ? 'Per-run distribution of raw ns/op measurements. Each box = 15 points (3 forks × 5 iterations).'
+    : 'Historical ns/op across stored runs (lower is better).';
 }
 
 function destroyChart(which) {
