@@ -94,7 +94,7 @@ let activeTab      = 'latest';
 let trendChart     = null; // Chart.js instance in latest tab
 let trendTabChart  = null; // Chart.js instance in trend tab
 let selectedKey    = null; // currently selected benchmark key
-let trendMode        = 'line'; // 'line' | 'box'
+let trendMode        = 'line';
 let trendTabMode     = 'line';
 let lastTrendData    = null;
 let lastTrendTabData = null;
@@ -454,9 +454,15 @@ async function renderInlineTrend(key) {
   lastTrendData = await loadTrendData(key);
 
   destroyChart('trendChart');
-  trendChart = trendMode === 'box'
-    ? buildBoxPlotChart('trend-chart', lastTrendData.labels, lastTrendData.raw)
-    : buildLineChart('trend-chart', lastTrendData.labels, lastTrendData.scores, lastTrendData.errors);
+  if (trendMode === 'mgas') {
+    trendChart = lastTrendData.gasPerOp !== null
+      ? buildBoxPlotChart('trend-chart', lastTrendData.labels, lastTrendData.mgasRaw, 'MGas/s (higher is better)')
+      : null;
+  } else {
+    trendChart = trendMode === 'box'
+      ? buildBoxPlotChart('trend-chart', lastTrendData.labels, lastTrendData.raw, 'ns/op (lower is better)')
+      : buildLineChart('trend-chart', lastTrendData.labels, lastTrendData.scores, lastTrendData.errors);
+  }
 }
 
 async function renderTrendFromTab(key) {
@@ -473,9 +479,15 @@ async function renderTrendFromTab(key) {
   lastTrendTabData = await loadTrendData(key);
 
   destroyChart('trendTabChart');
-  trendTabChart = trendTabMode === 'box'
-    ? buildBoxPlotChart('trend-tab-chart', lastTrendTabData.labels, lastTrendTabData.raw)
-    : buildLineChart('trend-tab-chart', lastTrendTabData.labels, lastTrendTabData.scores, lastTrendTabData.errors);
+  if (trendTabMode === 'mgas') {
+    trendTabChart = lastTrendTabData.gasPerOp !== null
+      ? buildBoxPlotChart('trend-tab-chart', lastTrendTabData.labels, lastTrendTabData.mgasRaw, 'MGas/s (higher is better)')
+      : null;
+  } else {
+    trendTabChart = trendTabMode === 'box'
+      ? buildBoxPlotChart('trend-tab-chart', lastTrendTabData.labels, lastTrendTabData.raw, 'ns/op (lower is better)')
+      : buildLineChart('trend-tab-chart', lastTrendTabData.labels, lastTrendTabData.scores, lastTrendTabData.errors);
+  }
 }
 
 function setTrendMode(mode) {
@@ -483,12 +495,19 @@ function setTrendMode(mode) {
   trendMode = mode;
   el('trend-mode-line').classList.toggle('active', mode === 'line');
   el('trend-mode-box').classList.toggle('active', mode === 'box');
+  el('trend-mode-mgas').classList.toggle('active', mode === 'mgas');
   if (!lastTrendData) return;
   el('trend-sub').textContent = trendSubText(mode);
   destroyChart('trendChart');
-  trendChart = mode === 'box'
-    ? buildBoxPlotChart('trend-chart', lastTrendData.labels, lastTrendData.raw)
-    : buildLineChart('trend-chart', lastTrendData.labels, lastTrendData.scores, lastTrendData.errors);
+  if (mode === 'mgas') {
+    trendChart = lastTrendData.gasPerOp !== null
+      ? buildBoxPlotChart('trend-chart', lastTrendData.labels, lastTrendData.mgasRaw, 'MGas/s (higher is better)')
+      : null;
+  } else {
+    trendChart = mode === 'box'
+      ? buildBoxPlotChart('trend-chart', lastTrendData.labels, lastTrendData.raw, 'ns/op (lower is better)')
+      : buildLineChart('trend-chart', lastTrendData.labels, lastTrendData.scores, lastTrendData.errors);
+  }
 }
 
 function setTrendTabMode(mode) {
@@ -496,12 +515,19 @@ function setTrendTabMode(mode) {
   trendTabMode = mode;
   el('trend-tab-mode-line').classList.toggle('active', mode === 'line');
   el('trend-tab-mode-box').classList.toggle('active', mode === 'box');
+  el('trend-tab-mode-mgas').classList.toggle('active', mode === 'mgas');
   if (!lastTrendTabData) return;
   el('trend-tab-sub').textContent = trendSubText(mode);
   destroyChart('trendTabChart');
-  trendTabChart = mode === 'box'
-    ? buildBoxPlotChart('trend-tab-chart', lastTrendTabData.labels, lastTrendTabData.raw)
-    : buildLineChart('trend-tab-chart', lastTrendTabData.labels, lastTrendTabData.scores, lastTrendTabData.errors);
+  if (mode === 'mgas') {
+    trendTabChart = lastTrendTabData.gasPerOp !== null
+      ? buildBoxPlotChart('trend-tab-chart', lastTrendTabData.labels, lastTrendTabData.mgasRaw, 'MGas/s (higher is better)')
+      : null;
+  } else {
+    trendTabChart = mode === 'box'
+      ? buildBoxPlotChart('trend-tab-chart', lastTrendTabData.labels, lastTrendTabData.raw, 'ns/op (lower is better)')
+      : buildLineChart('trend-tab-chart', lastTrendTabData.labels, lastTrendTabData.scores, lastTrendTabData.errors);
+  }
 }
 
 async function loadTrendData(key) {
@@ -510,6 +536,7 @@ async function loadTrendData(key) {
   const scores = [];
   const errors = [];
   const raw    = [];
+  let gasPerOp = null;
 
   for (const run of slice) {
     try {
@@ -521,11 +548,23 @@ async function loadTrendData(key) {
         errors.push(match.primaryMetric.scoreError);
         const rd = match.primaryMetric.rawData;
         raw.push(Array.isArray(rd) ? rd.flat() : []);
+        if (gasPerOp === null) {
+          const name = shortName(match);
+          const opcodeClass =
+            name.endsWith('BenchmarkV2') ? name.slice(0, -'BenchmarkV2'.length) + 'V2' :
+            name.endsWith('Benchmark')   ? name.slice(0, -'Benchmark'.length) :
+            name;
+          const g = OPCODE_GAS_COST[opcodeClass];
+          if (g !== undefined) gasPerOp = g;
+        }
       }
     } catch (_) { /* skip failed loads */ }
   }
 
-  return { labels, scores, errors, raw };
+  const mgasScores = scores.map(s => gasPerOp !== null ? gasPerOp * 1000 / s : null);
+  const mgasRaw    = raw.map(pts => gasPerOp !== null ? pts.map(ns => gasPerOp * 1000 / ns) : []);
+
+  return { labels, scores, errors, raw, gasPerOp, mgasScores, mgasRaw };
 }
 
 function buildLineChart(canvasId, labels, scores, errors) {
@@ -578,7 +617,7 @@ function buildLineChart(canvasId, labels, scores, errors) {
 }
 
 // chartjs-chart-boxplot summarises each inner array (Tukey, 1.5×IQR whiskers).
-function buildBoxPlotChart(canvasId, labels, rawByRun) {
+function buildBoxPlotChart(canvasId, labels, rawByRun, yLabel = 'ns/op (lower is better)') {
   const ctx = el(canvasId).getContext('2d');
 
   // Tight-scale Y so stable benchmarks don't render as hairlines.
@@ -637,7 +676,7 @@ function buildBoxPlotChart(canvasId, labels, rawByRun) {
           grid:  { color: '#30363d' }
         },
         y: {
-          title: { display: true, text: 'ns/op (lower is better)', color: '#8b949e' },
+          title: { display: true, text: yLabel, color: '#8b949e' },
           ticks: { color: '#8b949e' },
           grid:  { color: '#30363d' },
           min:   yMin,
@@ -649,6 +688,7 @@ function buildBoxPlotChart(canvasId, labels, rawByRun) {
 }
 
 function trendSubText(mode) {
+  if (mode === 'mgas') return 'Per-run MGas/s distribution derived from raw ns/op measurements (higher is better).';
   return mode === 'box'
     ? 'Per-run distribution of raw ns/op measurements. Each box = 15 points (3 forks × 5 iterations).'
     : 'Historical ns/op across stored runs (lower is better).';
