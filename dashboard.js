@@ -9,76 +9,10 @@ const INDEX_URL = `${DATA_BASE}/index.json`;
 
 const REGRESSION_THRESHOLD_PCT = 5;
 
-// Keyed by Besu Operation class name (JMH benchmark class minus the "Benchmark"
-// suffix). To extend: add any new subclass of AbstractFixedCostOperation in
-// besu/evm/src/main/java/org/hyperledger/besu/evm/operation/. Dynamic-cost
-// opcodes are intentionally absent and render "—" in the MGas/s column.
-const OPCODE_GAS_COST = {
-  // 0 gas
-  'StopOperation': 0,
-  // 1 gas
-  'JumpDestOperation': 1,
-  // 2 gas (BASE tier)
-  'AddressOperation': 2,        'BaseFeeOperation': 2,        'BlobBaseFeeOperation': 2,
-  'CallDataSizeOperation': 2,   'CallValueOperation': 2,      'CallerOperation': 2,
-  'ChainIdOperation': 2,        'CodeSizeOperation': 2,       'CoinbaseOperation': 2,
-  'DifficultyOperation': 2,     'GasLimitOperation': 2,       'GasOperation': 2,
-  'GasPriceOperation': 2,       'MSizeOperation': 2,          'NumberOperation': 2,
-  'OriginOperation': 2,         'PCOperation': 2,             'PopOperation': 2,
-  'PrevRanDaoOperation': 2,     'Push0Operation': 2,          'ReturnDataSizeOperation': 2,
-  'SlotNumOperation': 2,        'TimestampOperation': 2,
-  // 3 gas (VERY_LOW tier)
-  'AddOperation': 3,            'AddOperationOptimized': 3,   'AndOperation': 3,
-  'AndOperationOptimized': 3,   'ByteOperation': 3,           'CallDataLoadOperation': 3,
-  'DupOperation': 3,            'DupNOperation': 3,           'EqOperation': 3,
-  'ExchangeOperation': 3,       'GtOperation': 3,             'IsZeroOperation': 3,
-  'LtOperation': 3,             'NotOperation': 3,            'NotOperationOptimized': 3,
-  'OrOperation': 3,             'OrOperationOptimized': 3,    'PushOperation': 3,
-  'SarOperation': 3,            'SarOperationOptimized': 3,   'SGtOperation': 3,
-  'ShlOperation': 3,            'ShlOperationOptimized': 3,   'ShrOperation': 3,
-  'ShrOperationOptimized': 3,   'SLtOperation': 3,            'SubOperation': 3,
-  'SubOperationOptimized': 3,   'SwapOperation': 3,           'SwapNOperation': 3,
-  'XorOperation': 3,            'XorOperationOptimized': 3,
-  // 5 gas (LOW tier)
-  'CountLeadingZerosOperation': 5, 'DivOperation': 5,        'DivOperationOptimized': 5,
-  'ModOperation': 5,            'ModOperationOptimized': 5,   'MulOperation': 5,
-  'MulOperationOptimized': 5,   'SDivOperation': 5,           'SDivOperationOptimized': 5,
-  'SelfBalanceOperation': 5,    'SignExtendOperation': 5,     'SModOperation': 5,
-  'SModOperationOptimized': 5,
-  // 8 gas (MID tier)
-  'AddModOperation': 8,         'AddModOperationOptimized': 8,
-  'JumpOperation': 8,           'MulModOperation': 8,         'MulModOperationOptimized': 8,
-  // 10 gas (HIGH tier)
-  'JumpiOperation': 10,
-
-  // V2 — subclasses of AbstractFixedCostOperationV2
-  // 2 gas (BASE tier)
-  'BaseFeeOperationV2': 2,      'BlobBaseFeeOperationV2': 2,  'CallValueOperationV2': 2,
-  'ChainIdOperationV2': 2,      'CoinbaseOperationV2': 2,     'GasLimitOperationV2': 2,
-  'GasPriceOperationV2': 2,     'PrevRanDaoOperationV2': 2,
-  // 3 gas (VERY_LOW tier)
-  'AddOperationV2': 3,          'SarOperationV2': 3,          'ShlOperationV2': 3,
-  'ShrOperationV2': 3,          'SubOperationV2': 3,
-  // 5 gas (LOW tier)
-  'DivOperationV2': 5,          'ModOperationV2': 5,          'MulOperationV2': 5,
-  'SDivOperationV2': 5,         'SelfBalanceOperationV2': 5,  'SModOperationV2': 5,
-  // 8 gas (MID tier)
-  'MulModOperationV2': 8,
-};
-
 // (1e9 ns/s ÷ ns/op) × gas/op ÷ 1e6 = MGas/s.
-// The < 0.5 ns/op floor rejects baseline-subtracted or optimized-out benchmarks
-// whose reported score collapses toward zero; without it those produce
-// nonsense throughput in the billions.
-function computeMGasPerSec(scoreNsPerOp, benchmarkShortName) {
-  const opcodeClass =
-    benchmarkShortName.endsWith('BenchmarkV2') ? benchmarkShortName.slice(0, -'BenchmarkV2'.length) + 'V2' :
-    benchmarkShortName.endsWith('Benchmark')   ? benchmarkShortName.slice(0, -'Benchmark'.length) :
-    benchmarkShortName;
-  const gas = OPCODE_GAS_COST[opcodeClass];
-  if (gas === undefined || !isFinite(scoreNsPerOp) || scoreNsPerOp < 0.5) return null;
-  const opsPerSec = 1e9 / scoreNsPerOp;
-  return (opsPerSec * gas) / 1e6;
+function computeMGasPerSec(scoreNsPerOp, gas) {
+  if (gas == null || !isFinite(scoreNsPerOp) || scoreNsPerOp < 0.5) return null;
+  return gas * 1000 / scoreNsPerOp;
 }
 
 // ── State ──────────────────────────────────────────────────────────────────
@@ -226,7 +160,8 @@ async function renderLatestRun() {
     entry._params = paramsDisplay(entry);
     entry._score  = entry.primaryMetric.score;
     entry._error  = entry.primaryMetric.scoreError;
-    entry._mgas   = computeMGasPerSec(entry._score, entry._name);
+    const gas     = entry.secondaryMetrics?.gas?.score ?? null;
+    entry._mgas   = computeMGasPerSec(entry._score, gas);
 
     const prev = prevMap[entry._key];
     if (prev && prev.primaryMetric.score !== 0) {
@@ -455,7 +390,7 @@ async function renderInlineTrend(key) {
 
   destroyChart('trendChart');
   if (trendMode === 'mgas') {
-    trendChart = lastTrendData.gasPerOp !== null
+    trendChart = lastTrendData.hasMgas
       ? buildBoxPlotChart('trend-chart', lastTrendData.labels, lastTrendData.mgasRaw, 'MGas/s (higher is better)')
       : null;
   } else {
@@ -480,7 +415,7 @@ async function renderTrendFromTab(key) {
 
   destroyChart('trendTabChart');
   if (trendTabMode === 'mgas') {
-    trendTabChart = lastTrendTabData.gasPerOp !== null
+    trendTabChart = lastTrendTabData.hasMgas
       ? buildBoxPlotChart('trend-tab-chart', lastTrendTabData.labels, lastTrendTabData.mgasRaw, 'MGas/s (higher is better)')
       : null;
   } else {
@@ -500,7 +435,7 @@ function setTrendMode(mode) {
   el('trend-sub').textContent = trendSubText(mode);
   destroyChart('trendChart');
   if (mode === 'mgas') {
-    trendChart = lastTrendData.gasPerOp !== null
+    trendChart = lastTrendData.hasMgas
       ? buildBoxPlotChart('trend-chart', lastTrendData.labels, lastTrendData.mgasRaw, 'MGas/s (higher is better)')
       : null;
   } else {
@@ -520,7 +455,7 @@ function setTrendTabMode(mode) {
   el('trend-tab-sub').textContent = trendSubText(mode);
   destroyChart('trendTabChart');
   if (mode === 'mgas') {
-    trendTabChart = lastTrendTabData.gasPerOp !== null
+    trendTabChart = lastTrendTabData.hasMgas
       ? buildBoxPlotChart('trend-tab-chart', lastTrendTabData.labels, lastTrendTabData.mgasRaw, 'MGas/s (higher is better)')
       : null;
   } else {
@@ -532,11 +467,11 @@ function setTrendTabMode(mode) {
 
 async function loadTrendData(key) {
   const slice = globalIndex.slice(-20);
-  const labels = [];
-  const scores = [];
-  const errors = [];
-  const raw    = [];
-  let gasPerOp = null;
+  const labels      = [];
+  const scores      = [];
+  const errors      = [];
+  const raw         = [];
+  const gasPerOpByRun = [];
 
   for (const run of slice) {
     try {
@@ -548,23 +483,19 @@ async function loadTrendData(key) {
         errors.push(match.primaryMetric.scoreError);
         const rd = match.primaryMetric.rawData;
         raw.push(Array.isArray(rd) ? rd.flat() : []);
-        if (gasPerOp === null) {
-          const name = shortName(match);
-          const opcodeClass =
-            name.endsWith('BenchmarkV2') ? name.slice(0, -'BenchmarkV2'.length) + 'V2' :
-            name.endsWith('Benchmark')   ? name.slice(0, -'Benchmark'.length) :
-            name;
-          const g = OPCODE_GAS_COST[opcodeClass];
-          if (g !== undefined) gasPerOp = g;
-        }
+        gasPerOpByRun.push(match.secondaryMetrics?.gas?.score ?? null);
       }
     } catch (_) { /* skip failed loads */ }
   }
 
-  const mgasScores = scores.map(s => gasPerOp !== null ? gasPerOp * 1000 / s : null);
-  const mgasRaw    = raw.map(pts => gasPerOp !== null ? pts.map(ns => gasPerOp * 1000 / ns) : []);
+  const mgasScores = scores.map((s, i) => computeMGasPerSec(s, gasPerOpByRun[i]));
+  const mgasRaw    = raw.map((pts, i) => {
+    const g = gasPerOpByRun[i];
+    return g != null ? pts.map(ns => g * 1000 / ns) : [];
+  });
+  const hasMgas = mgasScores.some(v => v !== null);
 
-  return { labels, scores, errors, raw, gasPerOp, mgasScores, mgasRaw };
+  return { labels, scores, errors, raw, hasMgas, mgasScores, mgasRaw };
 }
 
 function buildLineChart(canvasId, labels, scores, errors) {
