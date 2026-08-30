@@ -19,7 +19,7 @@ on:
 jobs:
   jmh-benchmarks:
     runs-on: ubuntu-latest
-    timeout-minutes: 240
+    timeout-minutes: 360
     permissions:
       contents: write
 
