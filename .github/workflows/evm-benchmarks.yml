@@ -15,6 +15,11 @@ on:
         description: 'JMH include pattern — leave empty to run all benchmarks'
         required: false
         default: ''
+      gas_profiler:
+        description: 'Enable GasProfiler to emit gas cost as a secondary metric (requires gas profiler support in the target Besu ref)'
+        required: false
+        type: boolean
+        default: false
 
 jobs:
   jmh-benchmarks:
@@ -62,11 +67,15 @@ jobs:
         working-directory: besu
         run: |
           FILTER="${{ inputs.benchmark_filter }}"
+          GAS_PROFILER="${{ inputs.gas_profiler }}"
+          ARGS="--rerun-tasks"
           if [ -n "$FILTER" ]; then
-            ./gradlew :ethereum:core:jmh -Pincludes="$FILTER" --rerun-tasks
-          else
-            ./gradlew :ethereum:core:jmh --rerun-tasks
+            ARGS="$ARGS -Pincludes=$FILTER"
           fi
+          if [ "$GAS_PROFILER" = "true" ]; then
+            ARGS="$ARGS -PgasProfiler=true"
+          fi
+          ./gradlew :ethereum:core:jmh $ARGS
 
       - name: Stage results and metadata
         run: |
