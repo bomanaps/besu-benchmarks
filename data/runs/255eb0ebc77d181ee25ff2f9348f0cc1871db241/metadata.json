@@ -1,0 +1,14 @@
+{
+  "sha": "255eb0ebc77d181ee25ff2f9348f0cc1871db241",
+  "ref": "main",
+  "besu_repo": "besu-eth/besu",
+  "date": "2026-08-31T14:35:57Z",
+  "run_id": "33381147815",
+  "benchmark_filter": "all",
+  "runner_os": "Linux",
+  "runner_arch": "X64",
+  "java_version": "openjdk version 25.0.4.1 2026-08-18 LTS",
+  "cpu_model": "AMD EPYC 7763 64-Core Processor",
+  "cpu_cores": "4",
+  "ram_total": "15Gi"
+}
