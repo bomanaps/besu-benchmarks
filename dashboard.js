@@ -202,7 +202,7 @@ function renderSummaryCards(latest, prev) {
     <div class="card">
       <div class="card-label">Benchmarks</div>
       <div class="card-value">${latestResults.length}</div>
-      <div class="card-sub">${latest.benchmark_filter === 'all' ? 'full suite' : latest.benchmark_filter}</div>
+      <div class="card-sub">${latest.benchmark_filter === 'all' ? 'full suite' : escapeHTML(latest.benchmark_filter)}</div>
     </div>
     <div class="card">
       <div class="card-label">Regressions</div>
@@ -217,12 +217,12 @@ function renderSummaryCards(latest, prev) {
     <div class="card">
       <div class="card-label">Fastest</div>
       <div class="card-value" style="font-size:14px; padding-top:6px;">${min.toFixed(2)} ns/op</div>
-      <div class="card-sub">${minEntry ? minEntry._name : '—'}</div>
+      <div class="card-sub">${minEntry ? escapeHTML(minEntry._name) : '—'}</div>
     </div>
     <div class="card">
       <div class="card-label">Slowest</div>
       <div class="card-value" style="font-size:14px; padding-top:6px;">${max.toFixed(0)} ns/op</div>
-      <div class="card-sub">${maxEntry ? maxEntry._name : '—'}</div>
+      <div class="card-sub">${maxEntry ? escapeHTML(maxEntry._name) : '—'}</div>
     </div>
     <div class="card">
       <div class="card-label">Runs stored</div>
@@ -662,7 +662,7 @@ function buildTrendSelect() {
 
 function populateRunDropdowns() {
   const opts = globalIndex.map((r, i) =>
-    `<option value="${r.sha}">${fmtDateShort(r.date)} — ${shortenSHA(r.sha)} (${r.ref}) — ${r.benchmark_count} benchmarks</option>`
+    `<option value="${escapeAttr(r.sha)}">${fmtDateShort(r.date)} — ${shortenSHA(r.sha)} (${escapeHTML(r.ref)}) — ${r.benchmark_count} benchmarks</option>`
   ).join('');
 
   el('compare-a').innerHTML = opts;
