@@ -1,0 +1,14 @@
+{
+  "sha": "6298195af06f8036b489d383acfc7e84429e26fe",
+  "ref": "main",
+  "besu_repo": "besu-eth/besu",
+  "date": "2026-09-04T02:24:45Z",
+  "run_id": "33810951928",
+  "benchmark_filter": "all",
+  "runner_os": "Linux",
+  "runner_arch": "X64",
+  "java_version": "openjdk version 25.0.4.1 2026-08-18 LTS",
+  "cpu_model": "AMD EPYC 9V74 80-Core Processor",
+  "cpu_cores": "4",
+  "ram_total": "15Gi"
+}
