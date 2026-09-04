@@ -19,7 +19,7 @@ on:
         description: 'Enable GasProfiler to emit gas cost as a secondary metric (requires gas profiler support in the target Besu ref)'
         required: false
         type: boolean
-        default: false
+        default: true
 
 jobs:
   jmh-benchmarks:
