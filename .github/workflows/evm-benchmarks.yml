@@ -75,6 +75,7 @@ jobs:
           if [ "$GAS_PROFILER" = "true" ]; then
             ARGS="$ARGS -PgasProfiler=true"
           fi
+          ARGS="$ARGS -Pexcludes=executeOperationWithEmptyHashCache"
           ./gradlew :ethereum:core:jmh $ARGS
 
       - name: Stage results and metadata
