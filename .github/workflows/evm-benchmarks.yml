@@ -109,17 +109,18 @@ jobs:
       - name: Persist results to main
         env:
           SHA: ${{ env.BESU_SHA }}
+          RUN_ID: ${{ github.run_id }}
           BENCHMARK_RESULTS: ${{ github.workspace }}
         run: |
           git config user.name "github-actions[bot]"
           git config user.email "github-actions[bot]@users.noreply.github.com"
           git pull --rebase origin main
-          mkdir -p data/runs/${SHA}
-          cp benchmark-output/jmh-results.json data/runs/${SHA}/results.json
-          cp benchmark-output/metadata.json    data/runs/${SHA}/metadata.json
+          mkdir -p data/runs/${RUN_ID}
+          cp benchmark-output/jmh-results.json data/runs/${RUN_ID}/results.json
+          cp benchmark-output/metadata.json    data/runs/${RUN_ID}/metadata.json
           python3 scripts/update_benchmark_index.py
           git add data/runs/
-          git commit -m "data: add benchmark run ${SHA}"
+          git commit -m "data: add benchmark run ${SHA} (${RUN_ID})"
           git push origin main
 
       - name: Write job summary

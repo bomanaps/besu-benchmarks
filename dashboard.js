@@ -134,7 +134,7 @@ async function renderLatestRun() {
   // Load results
   el('bench-tbody').innerHTML = '<tr><td colspan="7" class="msg">Loading…</td></tr>';
   try {
-    latestResults = await fetchJSON(`${DATA_BASE}/${latest.sha}/results.json`);
+    latestResults = await fetchJSON(`${DATA_BASE}/${latest.run_id}/results.json`);
   } catch (e) {
     el('bench-tbody').innerHTML = `<tr><td colspan="7" class="msg error">Failed to load results: ${e.message}</td></tr>`;
     return;
@@ -143,7 +143,7 @@ async function renderLatestRun() {
   // Load previous results for delta column
   if (prev) {
     try {
-      prevResults = await fetchJSON(`${DATA_BASE}/${prev.sha}/results.json`);
+      prevResults = await fetchJSON(`${DATA_BASE}/${prev.run_id}/results.json`);
       prevIndex   = prev;
     } catch (_) {
       prevResults = [];
@@ -475,7 +475,7 @@ async function loadTrendData(key) {
 
   for (const run of slice) {
     try {
-      const results = await fetchJSON(`${DATA_BASE}/${run.sha}/results.json`);
+      const results = await fetchJSON(`${DATA_BASE}/${run.run_id}/results.json`);
       const match = results.find(e => benchKey(e) === key);
       if (match) {
         labels.push(fmtDateShort(run.date) + ' (' + shortenSHA(run.sha) + ')');
@@ -662,7 +662,7 @@ function buildTrendSelect() {
 
 function populateRunDropdowns() {
   const opts = globalIndex.map((r, i) =>
-    `<option value="${escapeAttr(r.sha)}">${fmtDateShort(r.date)} — ${shortenSHA(r.sha)} (${escapeHTML(r.ref)}) — ${r.benchmark_count} benchmarks</option>`
+    `<option value="${escapeAttr(r.run_id)}">${fmtDateShort(r.date)} — ${shortenSHA(r.sha)} (${escapeHTML(r.ref)}) — ${r.benchmark_count} benchmarks</option>`
   ).join('');
 
   el('compare-a').innerHTML = opts;
@@ -670,20 +670,20 @@ function populateRunDropdowns() {
 
   // Default: A = second-to-last, B = last
   if (globalIndex.length >= 2) {
-    el('compare-a').value = globalIndex[globalIndex.length - 2].sha;
-    el('compare-b').value = globalIndex[globalIndex.length - 1].sha;
+    el('compare-a').value = globalIndex[globalIndex.length - 2].run_id;
+    el('compare-b').value = globalIndex[globalIndex.length - 1].run_id;
   } else {
-    el('compare-a').value = globalIndex[0].sha;
-    el('compare-b').value = globalIndex[0].sha;
+    el('compare-a').value = globalIndex[0].run_id;
+    el('compare-b').value = globalIndex[0].run_id;
   }
 }
 
 async function runComparison() {
-  const shaA = el('compare-a').value;
-  const shaB = el('compare-b').value;
-  const btn  = el('compare-btn');
+  const runIdA = el('compare-a').value;
+  const runIdB = el('compare-b').value;
+  const btn    = el('compare-btn');
 
-  if (!shaA || !shaB) return;
+  if (!runIdA || !runIdB) return;
 
   btn.disabled    = true;
   btn.textContent = 'Loading…';
@@ -691,12 +691,12 @@ async function runComparison() {
 
   try {
     const [dataA, dataB] = await Promise.all([
-      fetchJSON(`${DATA_BASE}/${shaA}/results.json`),
-      fetchJSON(`${DATA_BASE}/${shaB}/results.json`),
+      fetchJSON(`${DATA_BASE}/${runIdA}/results.json`),
+      fetchJSON(`${DATA_BASE}/${runIdB}/results.json`),
     ]);
 
-    const metaA = globalIndex.find(r => r.sha === shaA);
-    const metaB = globalIndex.find(r => r.sha === shaB);
+    const metaA = globalIndex.find(r => r.run_id === runIdA);
+    const metaB = globalIndex.find(r => r.run_id === runIdB);
 
     renderCompareTable(dataA, dataB, metaA, metaB);
   } catch (e) {
