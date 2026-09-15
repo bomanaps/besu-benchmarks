@@ -307,6 +307,17 @@
       border-radius: 6px;
     }
 
+    .cv-badge {
+      display: inline-block;
+      padding: 2px 7px;
+      border-radius: 10px;
+      font-size: 11px;
+      font-weight: 600;
+    }
+    .cv-stable  { background: #3fb95022; color: var(--green); border: 1px solid #3fb95055; }
+    .cv-medium  { background: #d2992222; color: var(--yellow); border: 1px solid #d2992255; }
+    .cv-noisy   { background: #f8514922; color: var(--red);   border: 1px solid #f8514955; }
+
     @media (max-width: 700px) {
       main { padding: 12px; }
       header { padding: 12px; flex-wrap: wrap; }
@@ -336,6 +347,7 @@
   <button class="tab-btn active" data-tab="latest" onclick="showTab('latest')">Latest Run</button>
   <button class="tab-btn" data-tab="trend"  onclick="showTab('trend')">Trend Chart</button>
   <button class="tab-btn" data-tab="compare" onclick="showTab('compare')">Compare Runs</button>
+  <button class="tab-btn" data-tab="noise"   onclick="showTab('noise')">Noise Study</button>
 </nav>
 
 <main>
@@ -412,6 +424,20 @@
       </div>
       <div style="position:relative; height:350px;"><canvas id="trend-tab-chart"></canvas></div>
     </div>
+  </div>
+
+  <!-- ── Tab: Noise Study ── -->
+  <div id="tab-noise" class="tab-content">
+    <div class="compare-controls">
+      <div>
+        <label>Commit SHA (runs with 2+ entries)</label><br/>
+        <select id="noise-sha-select" onchange="onNoiseShaChange()"></select>
+      </div>
+      <span id="noise-run-count" style="font-size:13px; color:var(--muted); align-self:flex-end;"></span>
+    </div>
+    <div id="noise-runners" style="margin-bottom:16px; font-size:12px; color:var(--muted);"></div>
+    <div id="noise-summary-cards" class="cards" style="display:none;"></div>
+    <div id="noise-result"></div>
   </div>
 
   <!-- ── Tab: Compare Runs ── -->
