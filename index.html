@@ -437,6 +437,19 @@
     </div>
     <div id="noise-runners" style="margin-bottom:16px; font-size:12px; color:var(--muted);"></div>
     <div id="noise-summary-cards" class="cards" style="display:none;"></div>
+    <div class="toolbar" id="noise-toolbar" style="display:none;">
+      <input type="text" id="noise-search" placeholder="Filter benchmarks..." oninput="applyNoiseFilter()" />
+      <label>
+        Show:
+        <select id="noise-cv-filter" onchange="applyNoiseFilter()">
+          <option value="all">All</option>
+          <option value="stable">Stable only (CV &lt; 5%)</option>
+          <option value="medium">Medium only (5–10%)</option>
+          <option value="noisy">Noisy only (CV &ge; 10%)</option>
+        </select>
+      </label>
+      <span id="noise-result-count" style="font-size:12px; color:var(--muted); margin-left:auto;"></span>
+    </div>
     <div id="noise-result"></div>
   </div>
 

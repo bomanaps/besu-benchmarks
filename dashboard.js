@@ -116,7 +116,6 @@ function showTab(tab) {
 
   if (tab === 'latest' && latestResults.length === 0) renderLatestRun();
   if (tab === 'trend' && latestResults.length > 0) buildTrendSelect();
-  if (tab === 'noise') populateNoiseShaSelect();
 }
 
 // ── Latest Run View ────────────────────────────────────────────────────────
@@ -824,6 +823,8 @@ function escapeAttr(str) {
 
 // ── Noise Study View ───────────────────────────────────────────────────────
 
+let noiseRows = [];
+
 function populateNoiseShaSelect() {
   const bySha = {};
   for (const run of globalIndex) {
@@ -916,11 +917,56 @@ async function onNoiseShaChange() {
     <div class="card"><div class="card-label">Noisy (CV &ge; 10%)</div><div class="card-value" style="color:var(--red)">${noisy}</div><div class="card-sub">high variance</div></div>
   `;
 
+  noiseRows = rows;
+
   const scoreHeaders = runs.map((r, i) =>
     `<th class="num">Run ${i + 1} (ns/op)</th>`
   ).join('');
 
-  const tableRows = rows.map(r => {
+  el('noise-result').innerHTML = `
+    <div class="table-wrap">
+      <table id="noise-table">
+        <thead>
+          <tr>
+            <th>Benchmark</th>
+            <th>Params</th>
+            <th class="num">Mean (ns/op)</th>
+            <th class="num">Std Dev</th>
+            <th class="num">CV%</th>
+            <th class="num">Min</th>
+            <th class="num">Max</th>
+            ${scoreHeaders}
+          </tr>
+        </thead>
+        <tbody id="noise-tbody"></tbody>
+      </table>
+    </div>
+  `;
+
+  el('noise-toolbar').style.display = 'flex';
+  applyNoiseFilter();
+}
+
+function applyNoiseFilter() {
+  const search = (el('noise-search')?.value || '').toLowerCase();
+  const cvFilter = el('noise-cv-filter')?.value || 'all';
+
+  const filtered = noiseRows.filter(r => {
+    const name = shortName(r.entry).toLowerCase();
+    const params = paramsDisplay(r.entry).toLowerCase();
+    const matchesSearch = !search || name.includes(search) || params.includes(search);
+    const matchesCv =
+      cvFilter === 'all' ||
+      (cvFilter === 'stable' && r.cv < 5) ||
+      (cvFilter === 'medium' && r.cv >= 5 && r.cv < 10) ||
+      (cvFilter === 'noisy'  && r.cv >= 10);
+    return matchesSearch && matchesCv;
+  });
+
+  const tbody = el('noise-tbody');
+  if (!tbody) return;
+
+  tbody.innerHTML = filtered.map(r => {
     const cvClass = r.cv < 5 ? 'cv-stable' : r.cv < 10 ? 'cv-medium' : 'cv-noisy';
     const cvLabel = r.cv < 5 ? 'stable' : r.cv < 10 ? 'medium' : 'noisy';
     const scoreCells = r.scores.map(s => `<td class="num">${s.toFixed(2)}</td>`).join('');
@@ -937,25 +983,7 @@ async function onNoiseShaChange() {
       </tr>`;
   }).join('');
 
-  el('noise-result').innerHTML = `
-    <div class="table-wrap">
-      <table>
-        <thead>
-          <tr>
-            <th>Benchmark</th>
-            <th>Params</th>
-            <th class="num">Mean (ns/op)</th>
-            <th class="num">Std Dev</th>
-            <th class="num">CV%</th>
-            <th class="num">Min</th>
-            <th class="num">Max</th>
-            ${scoreHeaders}
-          </tr>
-        </thead>
-        <tbody>${tableRows}</tbody>
-      </table>
-    </div>
-  `;
+  el('noise-result-count').textContent = `${filtered.length} of ${noiseRows.length} benchmarks`;
 }
 
 // ── Entry point ────────────────────────────────────────────────────────────
