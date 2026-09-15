@@ -36,6 +36,7 @@ runs.append({
     "benchmark_filter": meta["benchmark_filter"],
     "runner_os": meta["runner_os"],
     "runner_arch": meta["runner_arch"],
+    "cpu_model": meta.get("cpu_model", ""),
     "benchmark_count": len(data),
 })
 

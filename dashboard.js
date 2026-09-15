@@ -99,6 +99,7 @@ async function init() {
   }
 
   populateRunDropdowns();
+  populateNoiseShaSelect();
   showTab('latest');
 }
 
@@ -115,6 +116,7 @@ function showTab(tab) {
 
   if (tab === 'latest' && latestResults.length === 0) renderLatestRun();
   if (tab === 'trend' && latestResults.length > 0) buildTrendSelect();
+  if (tab === 'noise') populateNoiseShaSelect();
 }
 
 // ── Latest Run View ────────────────────────────────────────────────────────
@@ -818,6 +820,142 @@ function escapeAttr(str) {
     .replace(/&/g, '&amp;')
     .replace(/"/g, '&quot;')
     .replace(/'/g, '&#39;');
+}
+
+// ── Noise Study View ───────────────────────────────────────────────────────
+
+function populateNoiseShaSelect() {
+  const bySha = {};
+  for (const run of globalIndex) {
+    if (!bySha[run.sha]) bySha[run.sha] = [];
+    bySha[run.sha].push(run);
+  }
+
+  const eligible = Object.entries(bySha).filter(([, runs]) => runs.length >= 2);
+  const select = el('noise-sha-select');
+  select.innerHTML = '';
+
+  if (eligible.length === 0) {
+    select.innerHTML = '<option value="">No SHA with 2+ runs yet</option>';
+    return;
+  }
+
+  eligible.sort((a, b) => {
+    const latestA = Math.max(...a[1].map(r => new Date(r.date)));
+    const latestB = Math.max(...b[1].map(r => new Date(r.date)));
+    return latestB - latestA;
+  });
+
+  for (const [sha, runs] of eligible) {
+    const opt = document.createElement('option');
+    opt.value = sha;
+    opt.textContent = `${shortenSHA(sha)} — ${runs.length} runs — ${fmtDateShort(runs[0].date)}`;
+    select.appendChild(opt);
+  }
+
+  onNoiseShaChange();
+}
+
+async function onNoiseShaChange() {
+  const sha = el('noise-sha-select').value;
+  if (!sha) return;
+
+  const runs = globalIndex.filter(r => r.sha === sha);
+  el('noise-run-count').textContent = `${runs.length} runs against this commit`;
+
+  el('noise-runners').innerHTML = runs.map((r, i) =>
+    `Run ${i + 1}: <strong style="color:var(--text)">${escapeHTML(r.cpu_model || r.runner_os + ' / ' + r.runner_arch)}</strong> — ${fmtDateShort(r.date)} (${escapeHTML(r.run_id)})`
+  ).join('<br/>');
+
+  el('noise-result').innerHTML = '<div class="msg">Loading results…</div>';
+  el('noise-summary-cards').style.display = 'none';
+
+  let allResults;
+  try {
+    allResults = await Promise.all(
+      runs.map(r => fetchJSON(`${DATA_BASE}/${r.run_id}/results.json`))
+    );
+  } catch (e) {
+    el('noise-result').innerHTML = `<div class="msg error">Failed to load results: ${escapeHTML(e.message)}</div>`;
+    return;
+  }
+
+  const indexed = allResults.map(data => {
+    const map = {};
+    for (const entry of data) map[benchKey(entry)] = entry;
+    return map;
+  });
+
+  const commonKeys = Object.keys(indexed[0]).filter(k => indexed.every(m => k in m));
+
+  const rows = commonKeys.map(k => {
+    const scores = indexed.map(m => m[k].primaryMetric.score);
+    const mean = scores.reduce((a, b) => a + b, 0) / scores.length;
+    const variance = scores.reduce((a, b) => a + (b - mean) ** 2, 0) / scores.length;
+    const std = Math.sqrt(variance);
+    const cv = mean !== 0 ? (std / mean) * 100 : 0;
+    const min = Math.min(...scores);
+    const max = Math.max(...scores);
+    const entry = indexed[0][k];
+    return { k, cv, mean, std, min, max, entry, scores };
+  });
+
+  rows.sort((a, b) => b.cv - a.cv);
+
+  const stable = rows.filter(r => r.cv < 5).length;
+  const medium = rows.filter(r => r.cv >= 5 && r.cv < 10).length;
+  const noisy  = rows.filter(r => r.cv >= 10).length;
+  const medianCv = rows.map(r => r.cv).sort((a, b) => a - b)[Math.floor(rows.length / 2)];
+
+  el('noise-summary-cards').style.display = 'grid';
+  el('noise-summary-cards').innerHTML = `
+    <div class="card"><div class="card-label">Benchmarks compared</div><div class="card-value">${rows.length}</div><div class="card-sub">in all ${runs.length} runs</div></div>
+    <div class="card"><div class="card-label">Median CV</div><div class="card-value" style="color:${medianCv < 5 ? 'var(--green)' : medianCv < 10 ? 'var(--yellow)' : 'var(--red)'}">${medianCv.toFixed(1)}%</div><div class="card-sub">coefficient of variation</div></div>
+    <div class="card"><div class="card-label">Stable (CV &lt; 5%)</div><div class="card-value" style="color:var(--green)">${stable}</div><div class="card-sub">low noise</div></div>
+    <div class="card"><div class="card-label">Medium (5–10%)</div><div class="card-value" style="color:var(--yellow)">${medium}</div><div class="card-sub">moderate noise</div></div>
+    <div class="card"><div class="card-label">Noisy (CV &ge; 10%)</div><div class="card-value" style="color:var(--red)">${noisy}</div><div class="card-sub">high variance</div></div>
+  `;
+
+  const scoreHeaders = runs.map((r, i) =>
+    `<th class="num">Run ${i + 1} (ns/op)</th>`
+  ).join('');
+
+  const tableRows = rows.map(r => {
+    const cvClass = r.cv < 5 ? 'cv-stable' : r.cv < 10 ? 'cv-medium' : 'cv-noisy';
+    const cvLabel = r.cv < 5 ? 'stable' : r.cv < 10 ? 'medium' : 'noisy';
+    const scoreCells = r.scores.map(s => `<td class="num">${s.toFixed(2)}</td>`).join('');
+    return `
+      <tr>
+        <td>${escapeHTML(shortName(r.entry))}</td>
+        <td class="muted">${escapeHTML(paramsDisplay(r.entry))}</td>
+        <td class="num">${r.mean.toFixed(2)}</td>
+        <td class="num">${r.std.toFixed(2)}</td>
+        <td class="num"><span class="cv-badge ${cvClass}">${r.cv.toFixed(1)}% ${cvLabel}</span></td>
+        <td class="num">${r.min.toFixed(2)}</td>
+        <td class="num">${r.max.toFixed(2)}</td>
+        ${scoreCells}
+      </tr>`;
+  }).join('');
+
+  el('noise-result').innerHTML = `
+    <div class="table-wrap">
+      <table>
+        <thead>
+          <tr>
+            <th>Benchmark</th>
+            <th>Params</th>
+            <th class="num">Mean (ns/op)</th>
+            <th class="num">Std Dev</th>
+            <th class="num">CV%</th>
+            <th class="num">Min</th>
+            <th class="num">Max</th>
+            ${scoreHeaders}
+          </tr>
+        </thead>
+        <tbody>${tableRows}</tbody>
+      </table>
+    </div>
+  `;
 }
 
 // ── Entry point ────────────────────────────────────────────────────────────
