@@ -1,0 +1,14 @@
+{
+  "sha": "1f3b5a178df3ac929d3f52cb1e389d3178bb532c",
+  "ref": "1f3b5a178df3ac929d3f52cb1e389d3178bb532c",
+  "besu_repo": "besu-eth/besu",
+  "date": "2026-09-21T17:49:17Z",
+  "run_id": "35633105787",
+  "benchmark_filter": "AddOperation|CallDataCopyOperation|SStoreOperation",
+  "runner_os": "Linux",
+  "runner_arch": "X64",
+  "java_version": "openjdk version 25.0.4.1 2026-08-18 LTS",
+  "cpu_model": "INTEL(R) XEON(R) PLATINUM 8573C",
+  "cpu_cores": "4",
+  "ram_total": "15Gi"
+}
