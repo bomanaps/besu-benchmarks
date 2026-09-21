@@ -823,7 +823,9 @@ function escapeAttr(str) {
 
 // ── Noise Study View ───────────────────────────────────────────────────────
 
-let noiseRows = [];
+let noiseRows    = [];
+let noiseAllRuns    = [];
+let noiseAllResults = [];
 
 function populateNoiseShaSelect() {
   const bySha = {};
@@ -864,12 +866,9 @@ async function onNoiseShaChange() {
   const runs = globalIndex.filter(r => r.sha === sha);
   el('noise-run-count').textContent = `${runs.length} runs against this commit`;
 
-  el('noise-runners').innerHTML = runs.map((r, i) =>
-    `Run ${i + 1}: <strong style="color:var(--text)">${escapeHTML(r.cpu_model || r.runner_os + ' / ' + r.runner_arch)}</strong> — ${fmtDateShort(r.date)} (${escapeHTML(r.run_id)})`
-  ).join('<br/>');
-
   el('noise-result').innerHTML = '<div class="msg">Loading results…</div>';
   el('noise-summary-cards').style.display = 'none';
+  el('noise-toolbar').style.display = 'none';
 
   let allResults;
   try {
@@ -881,9 +880,40 @@ async function onNoiseShaChange() {
     return;
   }
 
-  const indexed = allResults.map(data => {
+  noiseAllRuns    = runs;
+  noiseAllResults = allResults;
+
+  el('noise-runners').innerHTML = runs.map((r, i) => {
+    const label = escapeHTML(r.cpu_model || `${r.runner_os} / ${r.runner_arch}`);
+    return `<label style="display:block; margin-bottom:6px; cursor:pointer;">
+      <input type="checkbox" class="noise-run-cb" value="${escapeAttr(r.run_id)}" checked onchange="recomputeNoise()" />
+      Run ${i + 1}: <strong style="color:var(--text)">${label}</strong> — ${fmtDateShort(r.date)} (${escapeHTML(r.run_id)})
+    </label>`;
+  }).join('');
+
+  recomputeNoise();
+}
+
+function recomputeNoise() {
+  const checked = Array.from(document.querySelectorAll('.noise-run-cb:checked')).map(cb => cb.value);
+
+  if (checked.length < 2) {
+    el('noise-result').innerHTML = '<div class="msg">Select at least 2 runs to compare.</div>';
+    el('noise-summary-cards').style.display = 'none';
+    el('noise-toolbar').style.display = 'none';
+    noiseRows = [];
+    return;
+  }
+
+  const selected = noiseAllRuns
+    .map((r, i) => ({ run: r, results: noiseAllResults[i] }))
+    .filter(({ run }) => checked.includes(run.run_id));
+
+  const selectedRuns = selected.map(s => s.run);
+
+  const indexed = selected.map(({ results }) => {
     const map = {};
-    for (const entry of data) map[benchKey(entry)] = entry;
+    for (const entry of results) map[benchKey(entry)] = entry;
     return map;
   });
 
@@ -903,14 +933,16 @@ async function onNoiseShaChange() {
 
   rows.sort((a, b) => b.cv - a.cv);
 
-  const stable = rows.filter(r => r.cv < 5).length;
-  const medium = rows.filter(r => r.cv >= 5 && r.cv < 10).length;
-  const noisy  = rows.filter(r => r.cv >= 10).length;
-  const medianCv = rows.map(r => r.cv).sort((a, b) => a - b)[Math.floor(rows.length / 2)];
+  const stable   = rows.filter(r => r.cv < 5).length;
+  const medium   = rows.filter(r => r.cv >= 5 && r.cv < 10).length;
+  const noisy    = rows.filter(r => r.cv >= 10).length;
+  const medianCv = rows.length > 0
+    ? rows.map(r => r.cv).sort((a, b) => a - b)[Math.floor(rows.length / 2)]
+    : 0;
 
   el('noise-summary-cards').style.display = 'grid';
   el('noise-summary-cards').innerHTML = `
-    <div class="card"><div class="card-label">Benchmarks compared</div><div class="card-value">${rows.length}</div><div class="card-sub">in all ${runs.length} runs</div></div>
+    <div class="card"><div class="card-label">Benchmarks compared</div><div class="card-value">${rows.length}</div><div class="card-sub">in ${selectedRuns.length} selected runs</div></div>
     <div class="card"><div class="card-label">Median CV</div><div class="card-value" style="color:${medianCv < 5 ? 'var(--green)' : medianCv < 10 ? 'var(--yellow)' : 'var(--red)'}">${medianCv.toFixed(1)}%</div><div class="card-sub">coefficient of variation</div></div>
     <div class="card"><div class="card-label">Stable (CV &lt; 5%)</div><div class="card-value" style="color:var(--green)">${stable}</div><div class="card-sub">low noise</div></div>
     <div class="card"><div class="card-label">Medium (5–10%)</div><div class="card-value" style="color:var(--yellow)">${medium}</div><div class="card-sub">moderate noise</div></div>
@@ -919,9 +951,10 @@ async function onNoiseShaChange() {
 
   noiseRows = rows;
 
-  const scoreHeaders = runs.map((r, i) =>
-    `<th class="num">Run ${i + 1} (ns/op)</th>`
-  ).join('');
+  const scoreHeaders = selectedRuns.map(r => {
+    const originalIdx = noiseAllRuns.indexOf(r);
+    return `<th class="num">Run ${originalIdx + 1} (ns/op)</th>`;
+  }).join('');
 
   el('noise-result').innerHTML = `
     <div class="table-wrap">
