@@ -883,15 +883,55 @@ async function onNoiseShaChange() {
   noiseAllRuns    = runs;
   noiseAllResults = allResults;
 
-  el('noise-runners').innerHTML = runs.map((r, i) => {
-    const label = escapeHTML(r.cpu_model || `${r.runner_os} / ${r.runner_arch}`);
-    return `<label style="display:block; margin-bottom:6px; cursor:pointer;">
-      <input type="checkbox" class="noise-run-cb" value="${escapeAttr(r.run_id)}" checked onchange="recomputeNoise()" />
-      Run ${i + 1}: <strong style="color:var(--text)">${label}</strong> — ${fmtDateShort(r.date)} (${escapeHTML(r.run_id)})
-    </label>`;
-  }).join('');
+  const groups = {};
+  runs.forEach((r, i) => {
+    const key = r.cpu_model || `${r.runner_os} / ${r.runner_arch}`;
+    if (!groups[key]) groups[key] = [];
+    groups[key].push({ run: r, index: i });
+  });
+
+  el('noise-runners').innerHTML = Object.entries(groups).map(([cpu, members]) => `
+    <div class="noise-group">
+      <div class="noise-group-header" onclick="toggleNoiseGroup(this)">
+        <span class="noise-group-arrow">▼</span>
+        <input type="checkbox" class="noise-group-cb" checked onclick="event.stopPropagation()" onchange="toggleNoiseGroupChecked(this)" />
+        <strong style="color:var(--text)">${escapeHTML(cpu)}</strong>
+        <span class="noise-group-count">(${members.length} run${members.length !== 1 ? 's' : ''})</span>
+      </div>
+      <div class="noise-group-body">
+        ${members.map(({ run, index }) => `
+          <label>
+            <input type="checkbox" class="noise-run-cb" value="${escapeAttr(run.run_id)}" checked onchange="updateNoiseGroupMaster(this); recomputeNoise()" />
+            Run ${index + 1}: ${fmtDateShort(run.date)} (${escapeHTML(run.run_id)})
+          </label>
+        `).join('')}
+      </div>
+    </div>
+  `).join('');
 
   recomputeNoise();
+}
+
+function toggleNoiseGroup(header) {
+  const body = header.nextElementSibling;
+  const arrow = header.querySelector('.noise-group-arrow');
+  const collapsed = body.classList.toggle('hidden');
+  arrow.classList.toggle('collapsed', collapsed);
+}
+
+function toggleNoiseGroupChecked(masterCb) {
+  const body = masterCb.closest('.noise-group').querySelector('.noise-group-body');
+  body.querySelectorAll('.noise-run-cb').forEach(cb => { cb.checked = masterCb.checked; });
+  recomputeNoise();
+}
+
+function updateNoiseGroupMaster(cb) {
+  const body = cb.closest('.noise-group-body');
+  const master = body.closest('.noise-group').querySelector('.noise-group-cb');
+  const all = Array.from(body.querySelectorAll('.noise-run-cb'));
+  const checkedCount = all.filter(c => c.checked).length;
+  master.checked = checkedCount > 0;
+  master.indeterminate = checkedCount > 0 && checkedCount < all.length;
 }
 
 function recomputeNoise() {
