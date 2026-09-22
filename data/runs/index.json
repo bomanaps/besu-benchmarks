@@ -269,5 +269,16 @@
     "runner_arch": "X64",
     "cpu_model": "AMD EPYC 9V74 80-Core Processor",
     "benchmark_count": 18
+  },
+  {
+    "sha": "efddc0f59c534fc0269f4548afe68f1937f5ed39",
+    "ref": "main",
+    "date": "2026-09-22T02:17:31Z",
+    "run_id": "35657729008",
+    "benchmark_filter": "all",
+    "runner_os": "Linux",
+    "runner_arch": "X64",
+    "cpu_model": "INTEL(R) XEON(R) PLATINUM 8573C",
+    "benchmark_count": 539
   }
 ]
