@@ -1,6 +1,10 @@
 name: EVM JMH Benchmarks
 
 on:
+  schedule:
+    - cron: '0 2 * * *'
+    - cron: '0 10 * * *'
+    - cron: '0 18 * * *'
   workflow_dispatch:
     inputs:
       besu_ref:
@@ -27,6 +31,11 @@ jobs:
     timeout-minutes: 360
     permissions:
       contents: write
+    env:
+      BESU_REF: ${{ inputs.besu_ref || 'efddc0f59c534fc0269f4548afe68f1937f5ed39' }}
+      BESU_REPO: ${{ inputs.besu_repo || 'besu-eth/besu' }}
+      BENCH_FILTER: ${{ inputs.benchmark_filter || '' }}
+      GAS_PROFILER: ${{ github.event_name == 'schedule' && 'true' || inputs.gas_profiler }}
 
     steps:
       - name: Checkout besu-benchmarks
@@ -43,9 +52,9 @@ jobs:
 
       - name: Clone Besu
         run: |
-          git clone --depth 100 https://github.com/${{ inputs.besu_repo }}.git besu
+          git clone --depth 100 https://github.com/${BESU_REPO}.git besu
           cd besu
-          git checkout ${{ inputs.besu_ref }}
+          git checkout ${BESU_REF}
           echo "BESU_SHA=$(git rev-parse HEAD)" >> $GITHUB_ENV
 
       - name: Ensure JMH writes JSON output
@@ -66,8 +75,7 @@ jobs:
       - name: Run JMH Benchmarks
         working-directory: besu
         run: |
-          FILTER="${{ inputs.benchmark_filter }}"
-          GAS_PROFILER="${{ inputs.gas_profiler }}"
+          FILTER="${BENCH_FILTER}"
           ARGS="--rerun-tasks"
           if [ -n "$FILTER" ]; then
             ARGS="$ARGS -Pincludes=$FILTER"
@@ -85,11 +93,11 @@ jobs:
           cat > benchmark-output/metadata.json << EOF
           {
             "sha": "${BESU_SHA}",
-            "ref": "${{ inputs.besu_ref }}",
-            "besu_repo": "${{ inputs.besu_repo }}",
+            "ref": "${BESU_REF}",
+            "besu_repo": "${BESU_REPO}",
             "date": "$(date -u +%Y-%m-%dT%H:%M:%SZ)",
             "run_id": "${{ github.run_id }}",
-            "benchmark_filter": "${{ inputs.benchmark_filter || 'all' }}",
+            "benchmark_filter": "${BENCH_FILTER:-all}",
             "runner_os": "${{ runner.os }}",
             "runner_arch": "${{ runner.arch }}",
             "java_version": "$(java -version 2>&1 | head -1 | tr -d '\"')",
@@ -136,11 +144,11 @@ jobs:
 
           | | |
           |---|---|
-          | **Besu ref** | \`${{ inputs.besu_ref }}\` |
+          | **Besu ref** | \`${BESU_REF}\` |
           | **Besu SHA** | \`${BESU_SHA}\` |
-          | **Besu repo** | \`${{ inputs.besu_repo }}\` |
+          | **Besu repo** | \`${BESU_REPO}\` |
           | **Runner** | ${{ runner.os }} / ${{ runner.arch }} |
-          | **Filter** | \`${{ inputs.benchmark_filter || 'all' }}\` |
+          | **Filter** | \`${BENCH_FILTER:-all}\` |
           | **Benchmarks recorded** | ${BENCHMARK_COUNT} |
           | **Artifact** | \`jmh-results-${BESU_SHA}\` — retained 90 days |
           | **Dashboard** | https://bomanaps.github.io/besu-benchmarks/ |
