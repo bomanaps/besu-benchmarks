@@ -40,6 +40,11 @@ jobs:
     steps:
       - name: Checkout besu-benchmarks
         uses: actions/checkout@v4
+        with:
+          # Don't leave the write-scoped token in .git/config where the Besu
+          # build (untrusted code when besu_repo/besu_ref point elsewhere) can read it.
+          # The token is supplied only to the push step below.
+          persist-credentials: false
 
       - name: Setup Java 25
         uses: actions/setup-java@v4
@@ -52,9 +57,9 @@ jobs:
 
       - name: Clone Besu
         run: |
-          git clone --depth 100 https://github.com/${BESU_REPO}.git besu
+          git clone --depth 100 "https://github.com/${BESU_REPO}.git" besu
           cd besu
-          git checkout ${BESU_REF}
+          git checkout "${BESU_REF}"
           echo "BESU_SHA=$(git rev-parse HEAD)" >> $GITHUB_ENV
 
       - name: Ensure JMH writes JSON output
@@ -75,36 +80,48 @@ jobs:
       - name: Run JMH Benchmarks
         working-directory: besu
         run: |
-          FILTER="${BENCH_FILTER}"
-          ARGS="--rerun-tasks"
-          if [ -n "$FILTER" ]; then
-            ARGS="$ARGS -Pincludes=$FILTER"
+          # Bash array so the filter (a JMH regex, e.g. "Add.*|SStore") is passed as a
+          # single argument and never word-split or glob-expanded.
+          ARGS=(--rerun-tasks)
+          if [ -n "${BENCH_FILTER}" ]; then
+            ARGS+=("-Pincludes=${BENCH_FILTER}")
           fi
-          if [ "$GAS_PROFILER" = "true" ]; then
-            ARGS="$ARGS -PgasProfiler=true"
+          if [ "${GAS_PROFILER}" = "true" ]; then
+            ARGS+=(-PgasProfiler=true)
           fi
-          ARGS="$ARGS -Pexcludes=executeOperationWithEmptyHashCache"
-          ./gradlew :ethereum:core:jmh $ARGS
+          ARGS+=(-Pexcludes=executeOperationWithEmptyHashCache)
+          ./gradlew :ethereum:core:jmh "${ARGS[@]}"
 
       - name: Stage results and metadata
         run: |
           mkdir -p benchmark-output
           cp besu/ethereum/core/build/results/jmh/results.json benchmark-output/jmh-results.json
-          cat > benchmark-output/metadata.json << EOF
-          {
-            "sha": "${BESU_SHA}",
-            "ref": "${BESU_REF}",
-            "besu_repo": "${BESU_REPO}",
-            "date": "$(date -u +%Y-%m-%dT%H:%M:%SZ)",
-            "run_id": "${{ github.run_id }}",
-            "benchmark_filter": "${BENCH_FILTER:-all}",
-            "runner_os": "${{ runner.os }}",
-            "runner_arch": "${{ runner.arch }}",
-            "java_version": "$(java -version 2>&1 | head -1 | tr -d '\"')",
-            "cpu_model": "$(grep -m1 'model name' /proc/cpuinfo | cut -d: -f2 | xargs)",
-            "cpu_cores": "$(nproc)",
-            "ram_total": "$(free -h | awk '/^Mem:/{print $2}')"
+          export RUN_DATE="$(date -u +%Y-%m-%dT%H:%M:%SZ)"
+          export JAVA_VERSION="$(java -version 2>&1 | head -1 | tr -d '"')"
+          export CPU_MODEL="$(grep -m1 'model name' /proc/cpuinfo | cut -d: -f2 | xargs)"
+          export CPU_CORES="$(nproc)"
+          export RAM_TOTAL="$(free -h | awk '/^Mem:/{print $2}')"
+          # Serialise with json.dump so quotes/backslashes in inputs can't produce invalid JSON.
+          python3 - << 'EOF'
+          import json, os
+          e = os.environ
+          meta = {
+              "sha": e["BESU_SHA"],
+              "ref": e["BESU_REF"],
+              "besu_repo": e["BESU_REPO"],
+              "date": e["RUN_DATE"],
+              "run_id": e["GITHUB_RUN_ID"],
+              "benchmark_filter": e.get("BENCH_FILTER") or "all",
+              "runner_os": e["RUNNER_OS"],
+              "runner_arch": e["RUNNER_ARCH"],
+              "java_version": e["JAVA_VERSION"],
+              "cpu_model": e["CPU_MODEL"],
+              "cpu_cores": e["CPU_CORES"],
+              "ram_total": e["RAM_TOTAL"],
           }
+          with open("benchmark-output/metadata.json", "w") as f:
+              json.dump(meta, f, indent=2)
+              f.write("\n")
           EOF
 
       - name: Upload benchmark artifact
@@ -119,17 +136,22 @@ jobs:
           SHA: ${{ env.BESU_SHA }}
           RUN_ID: ${{ github.run_id }}
           BENCHMARK_RESULTS: ${{ github.workspace }}
+          GH_TOKEN: ${{ github.token }}
         run: |
           git config user.name "github-actions[bot]"
           git config user.email "github-actions[bot]@users.noreply.github.com"
-          git pull --rebase origin main
-          mkdir -p data/runs/${RUN_ID}
-          cp benchmark-output/jmh-results.json data/runs/${RUN_ID}/results.json
-          cp benchmark-output/metadata.json    data/runs/${RUN_ID}/metadata.json
+          # Credentials were not persisted at checkout; pass the token per command
+          # so it never lands in .git/config.
+          AUTH_HEADER="AUTHORIZATION: basic $(printf 'x-access-token:%s' "${GH_TOKEN}" | base64 -w0)"
+          echo "::add-mask::${AUTH_HEADER#AUTHORIZATION: basic }"
+          git -c "http.https://github.com/.extraheader=${AUTH_HEADER}" pull --rebase origin main
+          mkdir -p "data/runs/${RUN_ID}"
+          cp benchmark-output/jmh-results.json "data/runs/${RUN_ID}/results.json"
+          cp benchmark-output/metadata.json    "data/runs/${RUN_ID}/metadata.json"
           python3 scripts/update_benchmark_index.py
           git add data/runs/
           git commit -m "data: add benchmark run ${SHA} (${RUN_ID})"
-          git push origin main
+          git -c "http.https://github.com/.extraheader=${AUTH_HEADER}" push origin main
 
       - name: Write job summary
         run: |
