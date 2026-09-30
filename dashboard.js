@@ -86,7 +86,7 @@ async function init() {
   try {
     globalIndex = await fetchJSON(INDEX_URL);
   } catch (e) {
-    showMsg('bench-tbody', `<tr><td colspan="7" class="msg error">Could not load index.json: ${e.message}</td></tr>`);
+    showMsg('bench-tbody', `<tr><td colspan="7" class="msg error">Could not load index.json: ${escapeHTML(e.message)}</td></tr>`);
     return;
   }
 
@@ -137,7 +137,7 @@ async function renderLatestRun() {
   try {
     latestResults = await fetchJSON(`${DATA_BASE}/${latest.run_id}/results.json`);
   } catch (e) {
-    el('bench-tbody').innerHTML = `<tr><td colspan="7" class="msg error">Failed to load results: ${e.message}</td></tr>`;
+    el('bench-tbody').innerHTML = `<tr><td colspan="7" class="msg error">Failed to load results: ${escapeHTML(e.message)}</td></tr>`;
     return;
   }
 
@@ -345,7 +345,7 @@ function renderTable() {
   }
 
   tbody.innerHTML = rows.map(e => `
-    <tr data-key="${escapeAttr(e._key)}" class="${e._key === selectedKey ? 'selected' : ''}" onclick="selectBenchmark(this, '${escapeAttr(e._key)}')">
+    <tr data-key="${escapeAttr(e._key)}" class="${e._key === selectedKey ? 'selected' : ''}" onclick="selectBenchmark(this, this.dataset.key)">
       <td>${escapeHTML(e._name)}</td>
       <td class="muted">${escapeHTML(e._params)}</td>
       <td class="num">${e._score.toFixed(2)}</td>
@@ -663,7 +663,7 @@ function buildTrendSelect() {
 
 function populateRunDropdowns() {
   const opts = globalIndex.map((r, i) =>
-    `<option value="${escapeAttr(r.run_id)}">${fmtDateShort(r.date)} — ${shortenSHA(r.sha)} (${escapeHTML(r.ref)}) — ${r.benchmark_count} benchmarks</option>`
+    `<option value="${escapeAttr(r.run_id)}">${fmtDateShort(r.date)} — ${escapeHTML(shortenSHA(r.sha))} (${escapeHTML(r.ref)}) — ${escapeHTML(r.benchmark_count)} benchmarks</option>`
   ).join('');
 
   el('compare-a').innerHTML = opts;
@@ -701,7 +701,7 @@ async function runComparison() {
 
     renderCompareTable(dataA, dataB, metaA, metaB);
   } catch (e) {
-    el('compare-result').innerHTML = `<div class="msg error">Failed: ${e.message}</div>`;
+    el('compare-result').innerHTML = `<div class="msg error">Failed: ${escapeHTML(e.message)}</div>`;
   } finally {
     btn.disabled    = false;
     btn.textContent = 'Compare';
@@ -743,8 +743,8 @@ function renderCompareTable(dataA, dataB, metaA, metaB) {
     return 0;
   });
 
-  const labelA = `${fmtDateShort(metaA?.date)} ${shortenSHA(metaA?.sha)}`;
-  const labelB = `${fmtDateShort(metaB?.date)} ${shortenSHA(metaB?.sha)}`;
+  const labelA = escapeHTML(`${fmtDateShort(metaA?.date)} ${shortenSHA(metaA?.sha)}`);
+  const labelB = escapeHTML(`${fmtDateShort(metaB?.date)} ${shortenSHA(metaB?.sha)}`);
 
   const regression = rows.filter(r => r.speedup !== null && r.speedup < 0.9).length;
   const improved   = rows.filter(r => r.speedup !== null && r.speedup > 1.1).length;
@@ -811,7 +811,8 @@ function escapeHTML(str) {
     .replace(/&/g, '&amp;')
     .replace(/</g, '&lt;')
     .replace(/>/g, '&gt;')
-    .replace(/"/g, '&quot;');
+    .replace(/"/g, '&quot;')
+    .replace(/'/g, '&#39;');
 }
 
 function escapeAttr(str) {
